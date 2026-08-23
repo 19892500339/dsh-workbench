@@ -9,8 +9,16 @@
  * - 选中节点高亮, 面板按钮删除选中节点。
  */
 import React from 'react'
-import LogicFlow, { RectNode, RectNodeModel, h } from '@logicflow/core'
+import LogicFlowDefault, { RectNode, RectNodeModel, h } from '@logicflow/core'
 import type { WorkflowNode } from '../shared/types.js'
+
+/**
+ * Interop guard: in a CJS client bundle rolldown's node-mode interop can bind
+ * the default import to the whole module.exports object instead of the class.
+ * Prefer the named class when the default is itself the constructor.
+ */
+const LogicFlowCtor = ((LogicFlowDefault as unknown as { default?: unknown })?.default ??
+  LogicFlowDefault) as unknown as new (options: Record<string, unknown>) => InstanceType<typeof LogicFlowDefault>
 
 export interface WorkflowGraphProps {
   nodes: WorkflowNode[]
@@ -107,7 +115,7 @@ class WbNodeView extends RectNode {
 export function WorkflowGraph(props: WorkflowGraphProps) {
   const { nodes, selectedId, onSelect, onChange, onAddNode } = props
   const containerRef = React.useRef<HTMLDivElement | null>(null)
-  const lfRef = React.useRef<LogicFlow | null>(null)
+  const lfRef = React.useRef<InstanceType<typeof LogicFlowDefault> | null>(null)
   const draggingRef = React.useRef(false)
   const selectedIdRef = React.useRef(selectedId)
   selectedIdRef.current = selectedId
@@ -124,7 +132,7 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
     const container = containerRef.current
     if (!container) return
 
-    const lf = new LogicFlow({
+    const lf = new LogicFlowCtor({
       container,
       width: 640,
       height: 380,

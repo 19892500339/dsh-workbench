@@ -32,6 +32,15 @@ import type { UserConfig } from 'tsdown'
 /** Browser Web Crypto shim for dependencies that resolve the Node builtin. */
 const CRYPTO_SHIM = fileURLToPath(new URL('./src/client/shims/crypto.ts', import.meta.url))
 
+/**
+ * @logicflow/core publishes a CJS main (lib/index.js) whose default export is
+ * the LogicFlow class, but the client bundle is CJS too, so rolldown's
+ * node-mode interop binds `import_lib.default` to the whole module.exports
+ * object — `new LogicFlow(...)` then fails with "not a constructor". Alias the
+ * package to its ESM entry so the default import binds the class directly.
+ */
+const LOGICFLOW_ESM = fileURLToPath(new URL('./node_modules/@logicflow/core/es/index.js', import.meta.url))
+
 /** Node builtins must never survive into the browser module-loader factory. */
 const NODE_BUILTINS = new Set([
   ...builtinModules,
@@ -117,6 +126,7 @@ const clientConfig: UserConfig = {
       alias: {
         crypto: CRYPTO_SHIM,
         'node:crypto': CRYPTO_SHIM,
+        '@logicflow/core': LOGICFLOW_ESM,
       },
     },
   },
