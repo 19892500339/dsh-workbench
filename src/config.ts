@@ -33,6 +33,13 @@ export const WorkbenchSchema = z.object({
         model: z.string().default(''),
       })
       .default({ baseUrl: '', apiKey: '', model: '' }),
+    ragTargetKbId: z.string().default(''),
+    ragCustom: z
+      .object({
+        topK: z.number().default(5),
+        threshold: z.number().default(0.5),
+      })
+      .default({ topK: 5, threshold: 0.5 }),
   }),
   mcpServers: z
     .array(
@@ -104,6 +111,8 @@ export function defaultState(): WorkbenchState {
       topK: 5,
       engine: 'bm25',
       embedding: { baseUrl: '', apiKey: '', model: '' },
+      ragTargetKbId: '',
+      ragCustom: { topK: 5, threshold: 0.5 },
     },
     mcpServers: [],
     workflows: [],

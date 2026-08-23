@@ -31,6 +31,14 @@ export interface WorkbenchRuntime {
   searchRag(query: string, topK?: number, kbId?: string): Promise<SearchHit[]>
   upsertKnowledgeBase(kb: { id?: string; name: string; path: string }): Promise<SettingsView>
   removeKnowledgeBase(id: string): Promise<SettingsView>
+  /** V3.1: upload a pdf/txt/md document into a knowledge base folder. */
+  uploadDocument(input: { kbId?: string; fileName: string; contentBase64: string }): Promise<{
+    ok: boolean
+    name?: string
+    chars?: number
+    chunks?: number
+    error?: string
+  }>
   testServer(serverId: string): Promise<McpTestResult>
   upsertServer(server: McpServerConfig): Promise<SettingsView>
   removeServer(id: string): Promise<SettingsView>
@@ -115,6 +123,15 @@ export async function dispatch(runtime: WorkbenchRuntime, method: string, payloa
     }
     case 'kb.remove':
       return runtime.removeKnowledgeBase(str(p['id'], 'id'))
+    case 'kb.uploadDocument': {
+      const fileName = str(p['fileName'], 'fileName')
+      const contentBase64 = str(p['contentBase64'], 'contentBase64')
+      return runtime.uploadDocument({
+        kbId: p['kbId'] === undefined ? undefined : str(p['kbId'], 'kbId'),
+        fileName,
+        contentBase64,
+      })
+    }
     case 'mcp.test':
       return runtime.testServer(str(p['serverId'], 'serverId'))
     case 'mcp.save': {
@@ -244,7 +261,9 @@ export function registerApiRoutes(
         return
       }
       try {
-        const payload = await readJsonBody(req)
+        // Document uploads carry base64 payloads (up to ~20MB file → ~27MB body).
+        const limit = method === 'kb.uploadDocument' ? 40 * 1024 * 1024 : 1 << 20
+        const payload = await readJsonBody(req, limit)
         writeOk(res, await dispatch(runtime, method, payload))
       } catch (error) {
         writeError(res, error)

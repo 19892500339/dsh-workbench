@@ -15,14 +15,15 @@
  */
 import { homedir } from 'node:os'
 import { join, basename } from 'node:path'
-import { mkdir, copyFile, stat } from 'node:fs/promises'
+import { mkdir, copyFile, stat, writeFile } from 'node:fs/promises'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { CallId, ToolSchema } from '@deepseek-ai/dsh-llm'
 import type { SkillSummary } from '@deepseek-ai/dsh-skill'
 import { SETTINGS_NS, WorkbenchSchema, defaultState } from './config.js'
-import { bm25Engine, corpusSignature } from './search.js'
+import { bm25Engine, corpusSignature, chunkText } from './search.js'
 import type { CorpusIndex } from './search.js'
+import { extractDocumentText } from './documents.js'
 import { testMcpServer, makeServerId, connectMcpServer } from './mcp.js'
 import { embedTexts, buildVectorIndex, searchVectors, fuseRrf, isEmbeddingConfigured } from './embedding.js'
 import type { VectorIndex } from './embedding.js'
@@ -166,15 +167,25 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     const state = viewOf().value
     const o = state.overrides
 
-    // rag
-    if (o.rag === 'workbench') {
-      if (!overrideDisposers.has('rag')) {
-        overrideDisposers.set('rag', ctx.systemPrompt.section({
-          name: 'workbench:mechanism:rag',
-          order: 910,
-          text: '工作台已将「知识检索」机制替换为工作台知识库: 需要检索本地语料/项目文档时调用 workbench_search(可传 kb_id 指定知识库); 如需恢复 DSH 原有检索机制, 请点击对话输入区工作台选项的「还原」。',
-        }))
+    // rag — three modes: default | workbench (target KB) | custom retrieval.
+    // The section is rebuilt on every sync so a changed target KB or custom
+    // parameters are reflected in the injected text immediately.
+    if (o.rag !== 'default') {
+      disposeOverride('rag')
+      let ragText: string
+      if (o.rag === 'custom') {
+        ragText = `工作台已将「知识检索」机制替换为自定义检索: 调用 workbench_search 时使用自定义参数(topK=${state.rag.ragCustom.topK}, 相似度阈值=${state.rag.ragCustom.threshold}); 如需恢复 DSH 原有检索机制, 请点击「还原」。`
+      } else {
+        const kb = state.rag.knowledgeBases.find((k) => k.id === state.rag.ragTargetKbId)
+        ragText = kb
+          ? `工作台已将「知识检索」机制替换为工作台知识库「${kb.name}」(kb_id=${kb.id}): 检索该知识库时调用 workbench_search 并传 kb_id=${kb.id}; 如需恢复 DSH 原有检索机制, 请点击「还原」。`
+          : '工作台已将「知识检索」机制替换为工作台知识库(默认语料目录): 调用 workbench_search 检索; 如需恢复 DSH 原有检索机制, 请点击「还原」。'
       }
+      overrideDisposers.set('rag', ctx.systemPrompt.section({
+        name: 'workbench:mechanism:rag',
+        order: 910,
+        text: ragText,
+      }))
     } else {
       disposeOverride('rag')
     }
@@ -373,6 +384,49 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     const state = viewOf().value
     ragCaches.delete(id)
     return updateState({ rag: { ...state.rag, knowledgeBases: state.rag.knowledgeBases.filter((k) => k.id !== id) } })
+  }
+
+  /**
+   * V3.1: upload a document (pdf/txt/md) into a knowledge base folder.
+   * The raw file is saved into the KB corpus directory (so the corpus scan and
+   * the vector index pick it up), then the KB index is rebuilt immediately —
+   * including embeddings when the engine is vector/hybrid and configured.
+   */
+  async function uploadDocument(input: {
+    kbId?: string
+    fileName: string
+    contentBase64: string
+  }): Promise<{ ok: boolean; name?: string; chars?: number; chunks?: number; error?: string }> {
+    const state = viewOf().value
+    const kbId = input.kbId ?? defaultKbId
+    const corpusDir = corpusDirOf(state, kbId)
+    const fileName = basename(String(input.fileName ?? 'document.txt')).replace(/[\\/:*?"<>|]/g, '_')
+    const ext = fileName.toLowerCase().split('.').pop() ?? ''
+    if (!['pdf', 'txt', 'md'].includes(ext)) {
+      throw new WorkbenchApiError('bad-request', '仅支持 .pdf / .txt / .md 文件')
+    }
+    const buffer = Buffer.from(String(input.contentBase64 ?? ''), 'base64')
+    if (buffer.length === 0) throw new WorkbenchApiError('bad-request', '文件内容为空')
+    if (buffer.length > 20 * 1024 * 1024) throw new WorkbenchApiError('too-large', '文件超过 20MB 限制', 413)
+
+    await mkdir(corpusDir, { recursive: true })
+    const text = await extractDocumentText(fileName, buffer)
+    if (!text.trim()) throw new WorkbenchApiError('bad-request', '解析后没有可索引的文本内容')
+
+    // Avoid clobbering: suffix the timestamp when the name already exists.
+    let target = join(corpusDir, fileName)
+    if ((await stat(target).catch(() => null)) !== null) {
+      const dot = fileName.lastIndexOf('.')
+      const base = dot > 0 ? fileName.slice(0, dot) : fileName
+      const suffix = dot > 0 ? fileName.slice(dot) : ''
+      target = join(corpusDir, `${base}-${Date.now().toString(36)}${suffix}`)
+    }
+    await writeFile(target, buffer)
+
+    const chunks = chunkText(text, state.rag.chunkSize, state.rag.chunkOverlap).length
+    // Rebuild the KB index (BM25 + vectors when configured) so retrieval is fresh.
+    await rebuildRag(kbId).catch(() => undefined)
+    return { ok: true, name: basename(target), chars: text.length, chunks }
   }
 
   // --- tool registration ----------------------------------------------------
@@ -664,6 +718,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     searchRag,
     upsertKnowledgeBase,
     removeKnowledgeBase,
+    uploadDocument,
     testServer,
     upsertServer,
     removeServer,

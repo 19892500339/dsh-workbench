@@ -134,10 +134,12 @@ export interface EmbeddingConfig {
 
 /** V3: mechanism override mode. 'default' = DSH's original mechanism untouched. */
 export type OverrideMode = 'default' | 'workbench'
+/** V3.1: RAG mechanism may additionally be a custom retrieval mode. */
+export type RagOverrideMode = 'default' | 'workbench' | 'custom'
 
 /** V3: which capability domains the workbench currently replaces. */
 export interface MechanismOverrides {
-  rag: OverrideMode
+  rag: RagOverrideMode
   tools: OverrideMode
   skills: OverrideMode
   workflow: OverrideMode
@@ -155,6 +157,10 @@ export interface WorkbenchState {
     /** bm25 | vector | hybrid (RRF fusion). vector/hybrid need embeddings. */
     engine: 'bm25' | 'vector' | 'hybrid'
     embedding: EmbeddingConfig
+    /** V3.1: target knowledge base id when the RAG mechanism points at a KB. */
+    ragTargetKbId: string
+    /** V3.1: custom retrieval parameters used by the custom RAG mode. */
+    ragCustom: { topK: number; threshold: number }
   }
   mcpServers: McpServerConfig[]
   workflows: WorkflowDefinition[]

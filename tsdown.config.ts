@@ -108,6 +108,7 @@ const hostConfig: UserConfig = {
     neverBundle: (id: string) =>
       id.startsWith('@deepseek-ai/') ||
       id === '@modelcontextprotocol/sdk' ||
+      id === 'pdf-parse' ||
       NODE_BUILTINS.has(id),
   },
 }

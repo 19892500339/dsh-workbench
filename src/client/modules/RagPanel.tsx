@@ -106,6 +106,29 @@ export function RagPanel(props: PanelProps) {
     }
   }
 
+  /** V3.1: upload a pdf/txt/md file into a knowledge base (auto chunk + index). */
+  async function uploadDocument(kb: KnowledgeBase, file: File) {
+    setErr(null)
+    setBusy(true)
+    try {
+      const base64 = await readFileAsBase64(file)
+      const result = await call<{ ok: boolean; name?: string; chars?: number; chunks?: number; error?: string }>(
+        'kb.uploadDocument',
+        { kbId: kb.id, fileName: file.name, contentBase64: base64 },
+      )
+      if (result.ok) {
+        setNote(`已上传「${result.name}」到知识库「${kb.name}」: 解析 ${result.chars} 字符, 切分 ${result.chunks} 块, 索引已重建(向量引擎启用时自动向量化)`)
+      } else {
+        setErr(result.error ?? '上传失败')
+      }
+      await refresh()
+    } catch (e) {
+      setErr(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function runSearch() {
     if (!query.trim()) return
     setErr(null)
@@ -135,11 +158,27 @@ export function RagPanel(props: PanelProps) {
             <strong style={{ fontSize: 13 }}>{kb.name}</strong>
             <span style={styles.code}>{kb.path}</span>
             <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+              <label style={{ ...styles.button, display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                上传文档
+                <input
+                  type="file"
+                  accept=".pdf,.txt,.md"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) void uploadDocument(kb, file)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
               <Button onClick={() => setTargetKb(kb.id)}>检索此库</Button>
               <Button variant="danger" onClick={() => void removeKnowledgeBase(kb)}>删除</Button>
             </span>
           </div>
         ))}
+        <div style={{ ...styles.dim, marginTop: 6 }}>
+          「上传文档」支持 .pdf / .txt / .md: 自动解析 → 按分块参数切割 → 存入该知识库并重建索引(向量引擎启用时自动向量化)。
+        </div>
         <div style={{ borderTop: `1px solid ${palette.border}`, marginTop: 10, paddingTop: 10 }}>
           <div style={{ fontSize: 12, color: palette.dim, marginBottom: 6 }}>添加知识库 (指定一个文件夹):</div>
           <div style={styles.row}>
@@ -254,6 +293,20 @@ export function RagPanel(props: PanelProps) {
 
 function kbNameOf(kbs: KnowledgeBase[], id: string): string {
   return kbs.find((k) => k.id === id)?.name ?? id
+}
+
+/** Read a File as base64 (data URL payload). */
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const url = String(reader.result ?? '')
+      const comma = url.indexOf(',')
+      resolve(comma >= 0 ? url.slice(comma + 1) : url)
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'))
+    reader.readAsDataURL(file)
+  })
 }
 
 function clampInt(raw: string, min: number, max: number, fallback: number): number {
