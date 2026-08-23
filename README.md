@@ -1,5 +1,13 @@
 # dsh-workbench
 
+<div align="left">
+
+**🌐 Language / 语言:** [English](README.md) · [中文](README.zh.md)
+
+[![English](https://img.shields.io/badge/Language-English-blue.svg)](README.md) [![中文](https://img.shields.io/badge/Language-中文-red.svg)](README.zh.md)
+
+</div>
+
 > Visual orchestration workbench for agent capabilities · A hybrid plugin (client UI + server tool) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 Adds a **「工作台 / Workbench」tab** to the conversation view ring (beside Chat / Trajectory) and turns the six agent capabilities — **RAG · MCP · Workflow · Skills · Tools · Prompt** — into a visual, dynamically editable panel. It also registers a `workbench_search` retrieval tool, and provides **mechanism switches inside the composer** that temporarily replace DSH's own mechanisms with workbench content — with one-click restore.

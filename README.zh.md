@@ -1,5 +1,13 @@
 # dsh-workbench
 
+<div align="left">
+
+**🌐 语言 / Language:** [中文](README.zh.md) · [English](README.md)
+
+[![中文](https://img.shields.io/badge/Language-中文-red.svg)](README.zh.md) [![English](https://img.shields.io/badge/Language-English-blue.svg)](README.md)
+
+</div>
+
 > 智能体能力可视化编排工作台 · DeepSeek Harness 混合型插件(客户端 UI + 服务端工具)
 
 在对话标签栏的 **Chat / Trajectory** 之后新增一个「**工作台 / Workbench**」页签,把智能体的六大能力——**RAG / MCP / 工作流 / 技能 / 工具 / Prompt**——做成可视化、可动态增删改的编排面板;并在对话输入框内提供「**机制开关**」,可随时用工作台配置**暂时替换** DSH 的对应机制,一键还原。
