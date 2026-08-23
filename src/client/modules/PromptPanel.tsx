@@ -1,7 +1,8 @@
 /**
  * Prompt 模块: 提示词模板 CRUD / 变量占位符预览 / 切换生效模板。
- * 「切换生效」把 activePromptId 写入设置; 宿主在每个模型步骤组装提示词时
- * 通过 systemPrompt.variable('workbench_active_prompt') 注入当前模板内容。
+ * 「切换生效」把 activePromptId 写入设置; 宿主通过动态 section
+ * workbench:active-prompt 在每个模型步骤组装提示词时注入当前模板内容
+ * (未激活时为空 section, 不占上下文)。
  */
 import React from 'react'
 import { call, errorMessage } from '../api.js'

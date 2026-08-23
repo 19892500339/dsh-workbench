@@ -4,8 +4,8 @@
  * Registers:
  * - the `workbench_search` model tool (BM25 / vector / hybrid retrieval over
  *   the configured corpus; vector uses an OpenAI-compatible embeddings endpoint),
- * - a systemPrompt section advertising the tool and a `workbench_active_prompt`
- *   variable that injects the active prompt template at assembly time,
+ * - a systemPrompt section advertising the tool and a `workbench:active-prompt`
+ *   dynamic section that injects the active prompt template at assembly time,
  * - the /workbench/api RPC surface for the browser panel (persisted through
  *   the `settings` service, so all edits survive restarts),
  * - V2: dynamic MCP server connection that registers `wb_mcp__*` tools onto
@@ -422,11 +422,20 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
       text: '工作台知识库已可用: 当问题需要检索工作台语料(本地文档目录)时调用 workbench_search。',
     }),
   )
+  // V3 fix: the active prompt is injected as a DYNAMIC section — DSH only
+  // interpolates {{variable}} references that appear inside a section/persona,
+  // so registering a bare variable never reaches the model. A section whose
+  // text() resolves empty is dropped from the assembly, so an inactive prompt
+  // costs zero context.
   ctx.effect(() =>
-    ctx.systemPrompt.variable('workbench_active_prompt', () => {
-      const state = viewOf().value
-      const active = state.prompts.find((p) => p.id === state.activePromptId)
-      return active ? active.content : undefined
+    ctx.systemPrompt.section({
+      name: 'workbench:active-prompt',
+      order: 950,
+      text: () => {
+        const state = viewOf().value
+        const active = state.prompts.find((p) => p.id === state.activePromptId)
+        return active ? `【生效提示词: ${active.name}】\n${active.content}` : ''
+      },
     }),
   )
 

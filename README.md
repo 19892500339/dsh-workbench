@@ -13,7 +13,7 @@ Adds a **「工作台 / Workbench」tab** to the conversation view ring (beside 
 | 🔄 Workflow | built-in templates (resume writer, recruiter screen …) / **LogicFlow visual editor (proven engine; left panel adds nodes, drag reorders & re-chains live)** / form node editor / dry-run with step logs | deterministic dry-run executor; LLM runtime execution is V3 |
 | 🧩 Skills | list installed skills / import a local `SKILL.md` / follow toggles | `ctx.skills` registry + `~/.dsh/skills/` import |
 | 🛠️ Tools | list registered tools & schemas / test-call with args / **"hide from model" runtime toggle** | `ctx.tools` registry + `ctx.tools.restrict({ deny })` — effective immediately |
-| 📝 Prompt | **8 built-in domain templates (software eng / code review / translation / data analysis / PM / learning / marketing…)** / CRUD / `{{var}}` preview / switch active / **quick bar under the composer: recent-3 one-click switch + cancel** | `systemPrompt.variable('workbench_active_prompt')`, effective next model step |
+| 📝 Prompt | **8 built-in domain templates (software eng / code review / translation / data analysis / PM / learning / marketing…)** / CRUD / `{{var}}` preview / switch active / **📝 picker inside the composer: recent-3 one-click switch + cancel** | host dynamic section `workbench:active-prompt` injection (empty when inactive, zero context cost), effective next model step |
 
 All configuration persists through the host `settings` service (default `~/.dsh/settings.yaml`), surviving restarts.
 
