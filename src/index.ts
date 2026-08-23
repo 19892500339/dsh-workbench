@@ -438,7 +438,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
         // safePromptText: DSH treats {{var}} as a strict variable reference and
         // throws on unknowns, which would break assembly for any template with
         // unfilled placeholders. {var} keeps them readable without triggering.
-        return `【生效提示词: ${active.name}】\n${safePromptText(active.content)}`
+        return `【生效提示词: ${active.name}】(以下为当前必须严格遵守的指令, 请完整按其要求执行, 不要省略其中的格式与步骤要求)\n${safePromptText(active.content)}`
       },
     }),
   )
