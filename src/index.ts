@@ -2,11 +2,16 @@
  * dsh-workbench host entry.
  *
  * Registers:
- * - the `workbench_search` model tool (BM25 retrieval over the configured corpus),
+ * - the `workbench_search` model tool (BM25 / vector / hybrid retrieval over
+ *   the configured corpus; vector uses an OpenAI-compatible embeddings endpoint),
  * - a systemPrompt section advertising the tool and a `workbench_active_prompt`
  *   variable that injects the active prompt template at assembly time,
  * - the /workbench/api RPC surface for the browser panel (persisted through
- *   the `settings` service, so all edits survive restarts).
+ *   the `settings` service, so all edits survive restarts),
+ * - V2: dynamic MCP server connection that registers `wb_mcp__*` tools onto
+ *   ctx.tools (effect-scoped, coexists with the official `mcp__*` bridge),
+ * - V2: runtime tool visibility restrictions from the panel's toggles
+ *   (ctx.tools.restrict).
  */
 import { homedir } from 'node:os'
 import { join, basename } from 'node:path'
@@ -18,11 +23,14 @@ import type { SkillSummary } from '@deepseek-ai/dsh-skill'
 import { SETTINGS_NS, WorkbenchSchema, defaultState } from './config.js'
 import { bm25Engine, corpusSignature } from './search.js'
 import type { CorpusIndex } from './search.js'
-import { testMcpServer, makeServerId } from './mcp.js'
+import { testMcpServer, makeServerId, connectMcpServer } from './mcp.js'
+import { embedTexts, buildVectorIndex, searchVectors, fuseRrf, isEmbeddingConfigured } from './embedding.js'
+import type { VectorIndex } from './embedding.js'
 import { dryRunWorkflow, builtinTemplates } from './workflow.js'
 import { registerApiRoutes, WorkbenchApiError } from './api.js'
 import type { SettingsView, WorkbenchRuntime } from './api.js'
 import type {
+  McpConnectionStatus,
   McpServerConfig,
   McpTestResult,
   PromptTemplate,
@@ -62,6 +70,7 @@ interface ToolsServiceLike {
   get(name: string, scope?: unknown): ToolSchema | undefined
   schemas(scope?: unknown): ToolSchema[]
   execute(input: { callId: CallId; name: string; arguments: unknown; signal: AbortSignal }): Promise<unknown>
+  restrict(restriction: { deny?: string[]; allow?: string[] }): () => void
 }
 interface SettingsServiceLike {
   register(ns: string, schema: unknown, options?: unknown): unknown
@@ -107,13 +116,31 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
   }
   const updateState = async (patch: object, expectedRevision?: number): Promise<SettingsView> => {
     await ctx.settings.update(SETTINGS_NS, patch, expectedRevision)
+    applyToolRestrictions()
     return viewOf()
   }
 
+  // --- V2: runtime tool visibility (panel toggles → ctx.tools.restrict) -----
+  let toolRestrictDispose: (() => void) | null = null
+  function applyToolRestrictions(): void {
+    if (toolRestrictDispose) {
+      toolRestrictDispose()
+      toolRestrictDispose = null
+    }
+    const state = viewOf().value
+    const denied = Object.entries(state.toolToggles)
+      .filter(([, on]) => on === false)
+      .map(([name]) => name)
+    if (denied.length > 0) toolRestrictDispose = ctx.tools.restrict({ deny: denied })
+  }
+
   // --- RAG engine cache -----------------------------------------------------
-  let ragCache: { sig: string; index: CorpusIndex; info: RagIndexInfo } | null = null
+  let ragCache: { sig: string; index: CorpusIndex; vindex?: VectorIndex; info: RagIndexInfo } | null = null
 
   const ragConfigOf = (state: WorkbenchState): string => state.rag.corpusDir || config.corpusDir || defaultCorpusDir()
+
+  const wantsVectors = (state: WorkbenchState): boolean =>
+    (state.rag.engine === 'vector' || state.rag.engine === 'hybrid') && isEmbeddingConfigured(state.rag.embedding)
 
   async function rebuildRag(): Promise<RagIndexInfo> {
     const state = viewOf().value
@@ -123,14 +150,31 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     try {
       const index = await bm25Engine.rebuild(corpusDir, state.rag.chunkSize, state.rag.chunkOverlap)
       const sig = await corpusSignature(corpusDir)
+      let vindex: VectorIndex | undefined
+      let vectorCount: number | undefined
+      let embeddingModel: string | undefined
+      if (wantsVectors(state) && index.docs.length > 0) {
+        const vectors = await embedTexts(
+          index.docs.map((d) => d.text),
+          state.rag.embedding,
+        )
+        vindex = buildVectorIndex(
+          vectors,
+          index.docs.map((d) => ({ docId: d.id, file: d.file, chunkIndex: d.chunkIndex, text: d.text })),
+        )
+        vectorCount = index.docs.length
+        embeddingModel = state.rag.embedding.model.trim()
+      }
       const info: RagIndexInfo = {
         corpusDir,
         docCount: index.docs.length,
         chunkCount: index.docs.length,
         lastBuiltAt: Date.now(),
         lastBuildMs: Date.now() - started,
+        vectorCount,
+        embeddingModel,
       }
-      ragCache = { sig, index, info }
+      ragCache = { sig, index, vindex, info }
       return info
     } catch (error) {
       return {
@@ -157,7 +201,36 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     const index = ragCache?.index
     if (!index) return []
     const limit = Math.max(1, Math.min(topK ?? state.rag.topK, 50))
-    return bm25Engine.search(index, query, limit)
+
+    // bm25-only, or vector requested but not configured → lexical path.
+    if (state.rag.engine === 'bm25' || !isEmbeddingConfigured(state.rag.embedding)) {
+      return bm25Engine.search(index, query, limit)
+    }
+
+    // vector / hybrid path (embed the query; rebuild lazily when no vectors).
+    try {
+      if (!ragCache?.vindex) await rebuildRag()
+      const vindex = ragCache?.vindex
+      if (!vindex) return bm25Engine.search(index, query, limit)
+      const queryVec = (await embedTexts([query], state.rag.embedding))[0]
+      if (!queryVec) return bm25Engine.search(index, query, limit)
+      const vectorHits: SearchHit[] = searchVectors(vindex, queryVec, limit).map(({ docIndex, score }) => {
+        const doc = vindex.docs[docIndex]!
+        return {
+          score: Math.round(score * 1000) / 1000,
+          file: doc.file,
+          chunkIndex: doc.chunkIndex,
+          snippet: doc.text.replace(/\s+/g, ' ').trim().slice(0, 200),
+        }
+      })
+      if (state.rag.engine === 'hybrid') {
+        return fuseRrf(bm25Engine.search(index, query, limit), vectorHits, limit)
+      }
+      return vectorHits
+    } catch (error) {
+      console.error('[dsh-workbench] 向量检索失败, 回退 BM25:', error)
+      return bm25Engine.search(index, query, limit)
+    }
   }
 
   // --- tool registration ----------------------------------------------------
@@ -167,7 +240,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
         defineTool({
           name: 'workbench_search',
           description:
-            '在工作台配置的知识库(本地语料目录)中检索相关内容, 支持关键词/BM25 检索。当问题需要引用工作台语料、项目文档或用户上传的文本语料时使用。',
+            '在工作台配置的知识库(本地语料目录)中检索相关内容, 支持 BM25 关键词 / 向量 / 混合检索。当问题需要引用工作台语料、项目文档或用户上传的文本语料时使用。',
           parameters: {
             query: { type: 'string', required: true, description: '检索关键词或问题' },
             top_k: { type: 'number', description: '返回条数, 默认使用工作台配置' },
@@ -238,15 +311,22 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     const state = viewOf().value
     if (!server.id) server = { ...server, id: makeServerId(server.name || 'server') }
     const rest = state.mcpServers.filter((s) => s.id !== server.id)
-    return updateState({ mcpServers: [...rest, server] })
+    const next = await updateState({ mcpServers: [...rest, server] })
+    await syncServerConnection(server)
+    return next
   }
   async function removeServer(id: string): Promise<SettingsView> {
     const state = viewOf().value
+    disposeConnection(id)
     return updateState({ mcpServers: state.mcpServers.filter((s) => s.id !== id) })
   }
   async function toggleServer(id: string, enabled: boolean): Promise<SettingsView> {
     const state = viewOf().value
-    return updateState({ mcpServers: state.mcpServers.map((s) => (s.id === id ? { ...s, enabled } : s)) })
+    const server = state.mcpServers.find((s) => s.id === id)
+    if (!server) throw new WorkbenchApiError('not-found', `MCP 服务器 "${id}" 不存在`, 404)
+    const next = await updateState({ mcpServers: state.mcpServers.map((s) => (s.id === id ? { ...s, enabled } : s)) })
+    await syncServerConnection({ ...server, enabled })
+    return next
   }
   async function upsertWorkflow(workflow: WorkflowDefinition): Promise<SettingsView> {
     const state = viewOf().value
@@ -319,16 +399,54 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     return testMcpServer(server)
   }
 
+  // --- V2: dynamic MCP connection (tools auto-registered on ctx.tools) -------
+  const mcpConnections = new Map<string, McpConnectionStatus & { disposer: () => void }>()
+
+  function disposeConnection(id: string): void {
+    const existing = mcpConnections.get(id)
+    if (existing) {
+      existing.disposer()
+      mcpConnections.delete(id)
+    }
+  }
+
+  /** Connect (when enabled) or disconnect one server; never throws. */
+  async function syncServerConnection(server: McpServerConfig): Promise<void> {
+    disposeConnection(server.id)
+    if (!server.enabled) return
+    try {
+      const { disposer, result } = await connectMcpServer(server, tools)
+      mcpConnections.set(server.id, {
+        disposer,
+        connected: result.ok,
+        tools: result.tools,
+        ...(result.error ? { error: result.error } : {}),
+      })
+    } catch (error) {
+      mcpConnections.set(server.id, {
+        disposer: () => undefined,
+        connected: false,
+        tools: [],
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   // --- the runtime consumed by the RPC layer --------------------------------
   const runtime: WorkbenchRuntime = {
     async state(): Promise<StateSnapshot> {
       const view = viewOf()
+      const mcpStatus: Record<string, McpConnectionStatus> = {}
+      for (const [id, conn] of mcpConnections) {
+        mcpStatus[id] = { connected: conn.connected, tools: conn.tools, error: conn.error }
+      }
       return {
         value: view.value,
         revision: view.revision,
         skills: await listSkills(),
         tools: listTools(),
         rag: ragCache ? { ...ragCache.info } : null,
+        mcpStatus,
       }
     },
     updateState,
@@ -356,6 +474,13 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
   const initial = viewOf().value
   if (initial.workflows.length === 0) {
     void updateState({ workflows: builtinTemplates() }).catch(() => undefined)
+  }
+
+  // V2: apply persisted tool restrictions and connect enabled MCP servers
+  // asynchronously (failures are recorded, never block the plugin tree).
+  applyToolRestrictions()
+  for (const server of initial.mcpServers) {
+    if (server.enabled) void syncServerConnection(server)
   }
 }
 

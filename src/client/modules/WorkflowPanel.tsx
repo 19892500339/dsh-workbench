@@ -1,10 +1,11 @@
 /**
- * 工作流模块 (V1): 表单式节点列表编排 + 干运行执行。
- * 节点类型: prompt / transform / tool / output; 拖拽图编排留待 V2。
+ * 工作流模块 (V2): 表单式节点列表编排 + 拖拽画布(@xyflow/react)+ 干运行执行。
+ * 节点类型: prompt / transform / tool / output; 画布拖拽节点改变执行顺序。
  */
 import React from 'react'
 import { call, errorMessage } from '../api.js'
 import { Section, Field, Button, Empty, ErrorNote, styles, okNote, palette } from '../ui.js'
+import { WorkflowGraph } from '../WorkflowGraph.js'
 import type { StateSnapshot, WorkflowDefinition, WorkflowNode, WorkflowStepLog } from '../../shared/types.js'
 
 export interface PanelProps {
@@ -29,6 +30,8 @@ export function WorkflowPanel(props: PanelProps) {
   const [newKind, setNewKind] = React.useState<WorkflowNode['kind']>('prompt')
   const [newLabel, setNewLabel] = React.useState('')
   const [newParams, setNewParams] = React.useState('')
+  const [view, setView] = React.useState<'list' | 'graph'>('list')
+  const [graphSelected, setGraphSelected] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [err, setErr] = React.useState<string | null>(null)
   const [note, setNote] = React.useState<string | null>(null)
@@ -152,6 +155,9 @@ export function WorkflowPanel(props: PanelProps) {
       {draft && (
         <Section title={`编辑: ${draft.name || '(未命名)'}`} right={
           <span style={{ display: 'inline-flex', gap: 8 }}>
+            <Button onClick={() => setView(view === 'list' ? 'graph' : 'list')}>
+              {view === 'list' ? '🎨 拖拽画布' : '📋 列表视图'}
+            </Button>
             <Button variant="danger" onClick={() => void remove()}>删除</Button>
             <Button variant="primary" disabled={busy} onClick={() => void save()}>保存</Button>
           </span>
@@ -163,19 +169,36 @@ export function WorkflowPanel(props: PanelProps) {
             <input style={{ ...styles.input, width: '100%' }} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
           </Field>
 
-          <div style={{ fontSize: 12, color: palette.dim, margin: '10px 0 6px' }}>节点 ({draft.nodes.length}) — 按顺序执行:</div>
-          {draft.nodes.length === 0 && <Empty text="还没有节点。" />}
-          {draft.nodes.map((n, i) => (
-            <div key={n.id} style={{ ...styles.row, background: palette.panelAlt, borderRadius: 6, padding: '6px 8px', marginBottom: 4 }}>
-              <span style={styles.code}>{i + 1}</span>
-              <span style={styles.code}>{n.kind}</span>
-              <strong style={{ fontSize: 12 }}>{n.label}</strong>
-              <span style={{ ...styles.dim, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{paramsSummary(n)}</span>
-              <Button onClick={() => moveNode(i, -1)}>↑</Button>
-              <Button onClick={() => moveNode(i, 1)}>↓</Button>
-              <Button variant="danger" onClick={() => removeNode(i)}>✕</Button>
-            </div>
-          ))}
+          {view === 'graph' ? (
+            <>
+              <div style={{ fontSize: 12, color: palette.dim, margin: '10px 0 6px' }}>
+                节点 ({draft.nodes.length}) — 拖拽节点改变执行顺序(按垂直位置), 相邻节点自动连线:
+              </div>
+              <WorkflowGraph
+                nodes={draft.nodes}
+                selectedId={graphSelected}
+                onSelect={setGraphSelected}
+                onChange={(next) => { setDraft({ ...draft, nodes: next }); setGraphSelected(null) }}
+              />
+              {draft.nodes.length === 0 && <Empty text="还没有节点, 用下方表单添加。" />}
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 12, color: palette.dim, margin: '10px 0 6px' }}>节点 ({draft.nodes.length}) — 按顺序执行:</div>
+              {draft.nodes.length === 0 && <Empty text="还没有节点。" />}
+              {draft.nodes.map((n, i) => (
+                <div key={n.id} style={{ ...styles.row, background: palette.panelAlt, borderRadius: 6, padding: '6px 8px', marginBottom: 4 }}>
+                  <span style={styles.code}>{i + 1}</span>
+                  <span style={styles.code}>{n.kind}</span>
+                  <strong style={{ fontSize: 12 }}>{n.label}</strong>
+                  <span style={{ ...styles.dim, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{paramsSummary(n)}</span>
+                  <Button onClick={() => moveNode(i, -1)}>↑</Button>
+                  <Button onClick={() => moveNode(i, 1)}>↓</Button>
+                  <Button variant="danger" onClick={() => removeNode(i)}>✕</Button>
+                </div>
+              ))}
+            </>
+          )}
 
           <div style={{ borderTop: `1px solid ${palette.border}`, marginTop: 10, paddingTop: 10 }}>
             <div style={{ fontSize: 12, color: palette.dim, marginBottom: 6 }}>添加节点:</div>

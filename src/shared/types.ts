@@ -97,6 +97,10 @@ export interface RagIndexInfo {
   lastBuiltAt: number | null
   lastBuildMs: number | null
   error?: string
+  /** V2: number of embedded vectors when a vector/hybrid index exists. */
+  vectorCount?: number
+  /** V2: embedding model label used for the last vector build. */
+  embeddingModel?: string
 }
 
 /** One search hit from workbench_search / the RAG panel. */
@@ -108,6 +112,14 @@ export interface SearchHit {
   snippet: string
 }
 
+/** V2: OpenAI-compatible embeddings endpoint configuration. */
+export interface EmbeddingConfig {
+  /** e.g. https://api.openai.com/v1 or https://api.deepseek.com */
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
 /** The complete persisted workbench state (settings view). */
 export interface WorkbenchState {
   rag: {
@@ -115,7 +127,9 @@ export interface WorkbenchState {
     chunkSize: number
     chunkOverlap: number
     topK: number
-    engine: 'bm25' | 'vector'
+    /** bm25 | vector | hybrid (RRF fusion). vector/hybrid need embeddings. */
+    engine: 'bm25' | 'vector' | 'hybrid'
+    embedding: EmbeddingConfig
   }
   mcpServers: McpServerConfig[]
   workflows: WorkflowDefinition[]
@@ -127,6 +141,14 @@ export interface WorkbenchState {
   skillToggles: Record<string, boolean>
 }
 
+/** V2: live connection status of one MCP server (tools registered on ctx.tools). */
+export interface McpConnectionStatus {
+  connected: boolean
+  /** Public tool names registered on the registry. */
+  tools: string[]
+  error?: string
+}
+
 /** Full panel snapshot returned by workbench.api/state.get. */
 export interface StateSnapshot {
   value: WorkbenchState
@@ -134,4 +156,6 @@ export interface StateSnapshot {
   skills: SkillView[]
   tools: ToolView[]
   rag: RagIndexInfo | null
+  /** V2: live MCP connection status per server id. */
+  mcpStatus: Record<string, McpConnectionStatus>
 }

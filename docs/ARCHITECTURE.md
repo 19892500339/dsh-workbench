@@ -43,9 +43,12 @@
 
 ## V1 / V2 边界
 
-| 能力 | V1(本版本) | V2(预留) |
-|---|---|---|
-| RAG | BM25 关键词检索 | 向量引擎(`engine: 'vector'` 接口已预留) |
-| 工作流 | 表单式节点 + 干运行 | 拖拽图(@xyflow/react)+ LLM 运行时执行 |
-| MCP | 配置 CRUD + 连接测试 | 自动注册工具到 `ctx.tools`(交给官方 dsh-mcp-client) |
-| 技能/工具开关 | 工作台本地关注偏好 | 运行时真实挂载/卸载 |
+| 能力 | V1 | V2(已实现) | V3(预留) |
+|---|---|---|---|
+| RAG | BM25 关键词检索 | 向量引擎(`engine: 'vector'`)与混合检索(`engine: 'hybrid'`,RRF 融合);OpenAI 兼容嵌入端点 | 本地嵌入(transformers.js)、重排模型 |
+| 工作流 | 表单式节点 + 干运行 | 拖拽画布(@xyflow/react,拖拽排序 + 自动连线) | 分支/条件边 + LLM 运行时执行 |
+| MCP | 配置 CRUD + 连接测试 | 启用即自动连接并把工具注册到 `ctx.tools`(`wb_mcp__` 前缀,effect-scoped 卸载) | 重连策略、工具调用审批联动 |
+| 工具开关 | 本地关注偏好 | `ctx.tools.restrict({ deny })` 运行时对模型隐藏工具 | 会话级范围限制 |
+| 技能开关 | 本地关注偏好 | 维持现状(无官方 unregister API) | 真实挂载/卸载 |
+
+注意: 客户端 bundle 因内置 @xyflow/react 增大至约 351KB(88KB gzip);图编辑器按需由本插件打包,不额外请求外部资源。

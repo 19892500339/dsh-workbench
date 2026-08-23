@@ -8,14 +8,16 @@ Adds a **「工作台 / Workbench」tab** to the conversation view ring (beside 
 
 | Module | Visual operations | Backing mechanism |
 |---|---|---|
-| 📚 RAG | corpus dir / chunk size & overlap / rebuild index / search test | built-in BM25 engine (zero-dep, vector seam reserved) + `workbench_search` tool |
-| 🔌 MCP | server CRUD (`url` or `command`/`args`/`env`/`headers`) / enable toggle / connect test & tool list | `@modelcontextprotocol/sdk` handshake; tool registration left to DSH's own MCP bridge |
-| 🔄 Workflow | built-in templates (resume writer, recruiter screen …) / form-based node editor / dry-run with step logs | deterministic dry-run executor; LLM execution & graph editor are V2 |
+| 📚 RAG | corpus dir / chunk size & overlap / engine (**bm25 \| vector \| hybrid**) / OpenAI-compatible embeddings config / rebuild / search test | built-in BM25 + original vector engine (RRF fusion) + `workbench_search` tool |
+| 🔌 MCP | server CRUD (`url` or `command`/`args`/`env`/`headers`) / enable toggle / connect test / **auto-registers `wb_mcp__*` tools on ctx.tools when enabled** | `@modelcontextprotocol/sdk` dynamic connect + `ctx.tools.register` (coexists with the official `mcp__*` bridge) |
+| 🔄 Workflow | built-in templates (resume writer, recruiter screen …) / **@xyflow/react drag canvas (reorder & chain edges)** / form node editor / dry-run with step logs | deterministic dry-run executor; LLM runtime execution is V3 |
 | 🧩 Skills | list installed skills / import a local `SKILL.md` / follow toggles | `ctx.skills` registry + `~/.dsh/skills/` import |
-| 🛠️ Tools | list registered tools & schemas / test-call with args / follow toggles | `ctx.tools` registry + guarded execution pipeline |
+| 🛠️ Tools | list registered tools & schemas / test-call with args / **"hide from model" runtime toggle** | `ctx.tools` registry + `ctx.tools.restrict({ deny })` — effective immediately |
 | 📝 Prompt | template CRUD / `{{var}}` preview / switch the active prompt | `systemPrompt.variable('workbench_active_prompt')`, effective next model step |
 
 All configuration persists through the host `settings` service (default `~/.dsh/settings.yaml`), surviving restarts.
+
+> **V2 highlights**: drag-canvas workflow editor, vector/hybrid RAG (bring-your-own OpenAI-compatible embeddings endpoint), MCP servers that register their tools on `ctx.tools` the moment they are enabled, and a live "hide tool from the model" switch.
 
 ## Install
 

@@ -1,6 +1,7 @@
 /**
- * RAG 模块: 语料目录 / 分块参数 / 重建索引 / 检索测试。
- * 检索后端为宿主 BM25 引擎 (src/search.ts); 向量引擎为预留接口。
+ * RAG 模块 (V2): 语料目录 / 分块参数 / 引擎选择 (bm25 | vector | hybrid) /
+ * 嵌入端点配置 / 重建索引 / 检索测试。
+ * 检索后端: BM25 (src/search.ts) + 向量 (src/embedding.ts, OpenAI 兼容端点)。
  */
 import React from 'react'
 import { call, errorMessage } from '../api.js'
@@ -19,6 +20,10 @@ export function RagPanel(props: PanelProps) {
   const [chunkSize, setChunkSize] = React.useState(String(state.rag.chunkSize))
   const [chunkOverlap, setChunkOverlap] = React.useState(String(state.rag.chunkOverlap))
   const [topK, setTopK] = React.useState(String(state.rag.topK))
+  const [engine, setEngine] = React.useState(state.rag.engine)
+  const [embedBaseUrl, setEmbedBaseUrl] = React.useState(state.rag.embedding.baseUrl)
+  const [embedApiKey, setEmbedApiKey] = React.useState(state.rag.embedding.apiKey)
+  const [embedModel, setEmbedModel] = React.useState(state.rag.embedding.model)
   const [busy, setBusy] = React.useState(false)
   const [note, setNote] = React.useState<string | null>(null)
   const [err, setErr] = React.useState<string | null>(null)
@@ -36,6 +41,8 @@ export function RagPanel(props: PanelProps) {
             chunkSize: clampInt(chunkSize, 100, 20000, 800),
             chunkOverlap: clampInt(chunkOverlap, 0, 5000, 120),
             topK: clampInt(topK, 1, 50, 5),
+            engine,
+            embedding: { baseUrl: embedBaseUrl.trim(), apiKey: embedApiKey.trim(), model: embedModel.trim() },
           },
         },
         expectedRevision: snapshot.revision,
@@ -98,16 +105,40 @@ export function RagPanel(props: PanelProps) {
           </Field>
         </div>
         <div style={styles.row}>
+          <Field label="引擎">
+            <select style={styles.input} value={engine} onChange={(e) => setEngine(e.target.value as 'bm25' | 'vector' | 'hybrid')}>
+              <option value="bm25">BM25 关键词</option>
+              <option value="vector">向量 (需嵌入端点)</option>
+              <option value="hybrid">混合 (RRF 融合)</option>
+            </select>
+          </Field>
+        </div>
+        {(engine === 'vector' || engine === 'hybrid') && (
+          <div style={{ background: palette.panelAlt, borderRadius: 6, padding: '8px 10px', margin: '8px 0' }}>
+            <div style={{ fontSize: 12, color: palette.dim, marginBottom: 6 }}>嵌入端点 (OpenAI 兼容 /embeddings):</div>
+            <Field label="Base URL">
+              <input style={{ ...styles.input, width: '100%' }} value={embedBaseUrl} onChange={(e) => setEmbedBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" />
+            </Field>
+            <Field label="API Key">
+              <input style={{ ...styles.input, width: '100%' }} type="password" value={embedApiKey} onChange={(e) => setEmbedApiKey(e.target.value)} placeholder="sk-… (仅保存在本机设置)" />
+            </Field>
+            <Field label="模型">
+              <input style={{ ...styles.input, width: '100%' }} value={embedModel} onChange={(e) => setEmbedModel(e.target.value)} placeholder="text-embedding-3-small / bge-m3" />
+            </Field>
+          </div>
+        )}
+        <div style={styles.row}>
           <Button variant="primary" disabled={busy} onClick={() => void saveSettings()}>保存配置</Button>
           <Button disabled={busy} onClick={() => void rebuild()}>重建索引</Button>
         </div>
         <div style={styles.dim}>
-          引擎: bm25(内置, 零依赖) · 向量引擎为预留接口(engine: vector), 当前回退 bm25。
+          bm25 内置零依赖; vector/hybrid 需配置嵌入端点(密钥仅发往该端点, 不离开本机)。
           语料支持 .md / .txt, 递归扫描。
         </div>
         {rag && (
           <div style={{ marginTop: 8, fontSize: 12, color: palette.text }}>
-            索引状态: {rag.docCount} 个分块 · 上次构建 {rag.lastBuiltAt ? new Date(rag.lastBuiltAt).toLocaleString() : '未构建'}
+            索引状态: {rag.docCount} 个分块{rag.vectorCount !== undefined && ` · ${rag.vectorCount} 个向量${rag.embeddingModel ? ` (${rag.embeddingModel})` : ''}`}
+            {' '}· 上次构建 {rag.lastBuiltAt ? new Date(rag.lastBuiltAt).toLocaleString() : '未构建'}
             {rag.lastBuildMs !== null && ` · 耗时 ${rag.lastBuildMs}ms`}
             {rag.error && <span style={styles.danger}> · {rag.error}</span>}
           </div>

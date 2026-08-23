@@ -36,6 +36,10 @@ export function McpPanel(props: PanelProps) {
 
   const servers = snapshot.value.mcpServers
 
+  function statusOf(id: string) {
+    return snapshot.mcpStatus[id]
+  }
+
   async function saveServer() {
     setErr(null)
     if (!form.name.trim()) {
@@ -120,6 +124,22 @@ export function McpPanel(props: PanelProps) {
                   </div>
                 ) : (
                   <div style={styles.danger}>✗ 连接失败: {testResult[s.id]!.error}</div>
+                )}
+              </div>
+            )}
+            {statusOf(s.id) && (
+              <div style={{ marginTop: 6, fontSize: 12 }}>
+                {statusOf(s.id)!.connected ? (
+                  <div style={styles.ok}>
+                    ● 运行中 · 已注册 {statusOf(s.id)!.tools.length} 个工具到 ctx.tools (wb_mcp__ 前缀)
+                    {statusOf(s.id)!.tools.length > 0 && <div style={{ marginTop: 4, wordBreak: 'break-all' }}>{statusOf(s.id)!.tools.join('、')}</div>}
+                    {statusOf(s.id)!.error && <div style={styles.warn}>部分失败: {statusOf(s.id)!.error}</div>}
+                  </div>
+                ) : (
+                  <div style={styles.warn}>
+                    ● 未连接{s.enabled ? '' : ' (已禁用)'}
+                    {statusOf(s.id)!.error && <span> · {statusOf(s.id)!.error}</span>}
+                  </div>
                 )}
               </div>
             )}

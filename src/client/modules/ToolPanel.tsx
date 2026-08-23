@@ -1,6 +1,8 @@
 /**
- * 工具模块: 查看已注册工具与入参 schema / 测试调用 / 工作台级开关。
- * 测试调用走宿主 ctx.tools.execute, 仍受 DSH 工具策略与守卫约束。
+ * 工具模块 (V2): 查看已注册工具与入参 schema / 测试调用 / 运行时开关。
+ * 「对模型隐藏」走宿主 ctx.tools.restrict({ deny }): 立即把工具从模型的
+ * 可见工具集中移除, 关闭开关即恢复。测试调用走 ctx.tools.execute,
+ * 仍受 DSH 工具策略与守卫约束。
  */
 import React from 'react'
 import { call, errorMessage } from '../api.js'
@@ -66,7 +68,7 @@ export function ToolPanel(props: PanelProps) {
             <tr>
               <th style={styles.th}>工具</th>
               <th style={styles.th}>描述</th>
-              <th style={styles.th}>关注</th>
+              <th style={styles.th}>对模型隐藏</th>
             </tr>
           </thead>
           <tbody>

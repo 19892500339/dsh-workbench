@@ -17,6 +17,13 @@ export const WorkbenchSchema = z.object({
     chunkOverlap: z.number().default(120),
     topK: z.number().default(5),
     engine: z.string().default('bm25'),
+    embedding: z
+      .object({
+        baseUrl: z.string().default(''),
+        apiKey: z.string().default(''),
+        model: z.string().default(''),
+      })
+      .default({ baseUrl: '', apiKey: '', model: '' }),
   }),
   mcpServers: z
     .array(
@@ -69,7 +76,14 @@ export const WorkbenchSchema = z.object({
 /** Defaults used when a fresh document has no user layer yet. */
 export function defaultState(): WorkbenchState {
   return {
-    rag: { corpusDir: '', chunkSize: 800, chunkOverlap: 120, topK: 5, engine: 'bm25' },
+    rag: {
+      corpusDir: '',
+      chunkSize: 800,
+      chunkOverlap: 120,
+      topK: 5,
+      engine: 'bm25',
+      embedding: { baseUrl: '', apiKey: '', model: '' },
+    },
     mcpServers: [],
     workflows: [],
     prompts: [],
