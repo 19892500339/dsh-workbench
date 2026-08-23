@@ -3,7 +3,7 @@
  *
  * Registers:
  * - the `workbench_search` model tool (BM25 retrieval over the configured corpus),
- * - a systemPrompt section advertising the tool and a `workbench.activePrompt`
+ * - a systemPrompt section advertising the tool and a `workbench_active_prompt`
  *   variable that injects the active prompt template at assembly time,
  * - the /workbench/api RPC surface for the browser panel (persisted through
  *   the `settings` service, so all edits survive restarts).
@@ -207,7 +207,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     }),
   )
   ctx.effect(() =>
-    ctx.systemPrompt.variable('workbench.activePrompt', () => {
+    ctx.systemPrompt.variable('workbench_active_prompt', () => {
       const state = viewOf().value
       const active = state.prompts.find((p) => p.id === state.activePromptId)
       return active ? active.content : undefined

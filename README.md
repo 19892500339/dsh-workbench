@@ -13,7 +13,7 @@ Adds a **「工作台 / Workbench」tab** to the conversation view ring (beside 
 | 🔄 Workflow | built-in templates (resume writer, recruiter screen …) / form-based node editor / dry-run with step logs | deterministic dry-run executor; LLM execution & graph editor are V2 |
 | 🧩 Skills | list installed skills / import a local `SKILL.md` / follow toggles | `ctx.skills` registry + `~/.dsh/skills/` import |
 | 🛠️ Tools | list registered tools & schemas / test-call with args / follow toggles | `ctx.tools` registry + guarded execution pipeline |
-| 📝 Prompt | template CRUD / `{{var}}` preview / switch the active prompt | `systemPrompt.variable('workbench.activePrompt')`, effective next model step |
+| 📝 Prompt | template CRUD / `{{var}}` preview / switch the active prompt | `systemPrompt.variable('workbench_active_prompt')`, effective next model step |
 
 All configuration persists through the host `settings` service (default `~/.dsh/settings.yaml`), surviving restarts.
 
@@ -86,3 +86,8 @@ Surveyed via [awesome-dsh-plugins](https://github.com/oslook/awesome-dsh-plugins
 - No third-party code is pasted. Open-source references (e.g. [DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar), the official [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) ui-trajectory) were studied for interface contracts and build pipeline only; sources note the attribution.
 - Runtime dependencies are declared in `package.json` only: `@modelcontextprotocol/sdk` (MIT), `@deepseek-ai/*` (official, MIT), `react`, etc.
 - Before publishing to GitHub, update `repository.url` in `package.json` to your own repo.
+
+## 🚨 Development rules (mandatory)
+
+- `systemPrompt.variable(name)` names must match `/^[a-z][a-z0-9_]*$/` (lowercase snake_case; no dots, capitals or hyphens); `systemPrompt.section(name)` allows colons — the two rules differ.
+- Incident history and the full ruleset live in [docs/ERROR-FIX-LOG.md](./docs/ERROR-FIX-LOG.md).

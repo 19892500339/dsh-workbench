@@ -13,7 +13,7 @@
 | 🔄 工作流 | 内置模板(简历撰写、招聘筛选…)/ 表单式节点增删排序 / 手动干运行 + 逐步日志 | 确定性 dry-run 执行器;LLM 运行时执行与拖拽图留待 V2 |
 | 🧩 技能 | 查看已安装技能(触发条件、描述)/ 从本地 `SKILL.md` 导入 / 关注开关 | `ctx.skills` 注册表展示 + `~/.dsh/skills/` 导入 |
 | 🛠️ 工具 | 查看已注册工具与入参 schema / 传参测试调用 / 关注开关 | `ctx.tools`(注册表 + 守卫执行管线)|
-| 📝 Prompt | 模板 CRUD / `{{变量}}` 占位符预览 / 切换生效提示词 | `systemPrompt.variable('workbench.activePrompt')`,下一模型步骤生效 |
+| 📝 Prompt | 模板 CRUD / `{{变量}}` 占位符预览 / 切换生效提示词 | `systemPrompt.variable('workbench_active_prompt')`,下一模型步骤生效 |
 
 所有配置持久化到宿主 `settings` 服务(默认落盘 `~/.dsh/settings.yaml`),重启不丢。
 
@@ -95,3 +95,8 @@ npm test           # 引擎单测
 - 不粘贴任何第三方项目代码;参照开源项目(如 [DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)、官方 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 及其 ui-trajectory)仅学习接口契约与构建管线,并在源码注释中注明出处。
 - 运行时依赖仅在 `package.json` 声明:`@modelcontextprotocol/sdk`(MIT)、`@deepseek-ai/*`(官方包,MIT)、`react` 等。
 - 上架 GitHub 前请将 `package.json` 的 `repository.url` 改为你自己的仓库地址。
+
+## 🚨 开发注意事项(务必遵守)
+
+- `systemPrompt.variable(name)` 的变量名必须匹配 `/^[a-z][a-z0-9_]*$/`(小写 snake_case,禁止点号/大写/连字符);`systemPrompt.section(name)` 允许冒号,两者规则不同。
+- 历史报错与完整规则见 [docs/ERROR-FIX-LOG.md](./docs/ERROR-FIX-LOG.md)。
