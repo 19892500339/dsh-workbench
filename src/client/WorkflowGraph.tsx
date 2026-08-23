@@ -50,7 +50,7 @@ class WbNodeModel extends RectNodeModel {
   override initNodeData(data: any): void {
     super.initNodeData(data)
     this.width = 210
-    this.height = 52
+    this.height = 56
   }
   override setAttributes(): void {
     const kind = (this.properties as { kind?: string }).kind
@@ -60,15 +60,8 @@ class WbNodeModel extends RectNodeModel {
     this.stroke = selected ? '#4d7cfe' : color
     this.strokeWidth = 2
     this.radius = 8
-    const params = (this.properties as { params?: Record<string, string> }).params ?? {}
-    const summary = Object.entries(params)
-      .map(([k, v]) => `${k}=${v.slice(0, 24)}`)
-      .join(' · ')
-    this.text = {
-      x: this.x,
-      y: this.y,
-      value: `${(this.properties as { label?: string }).label ?? ''} · ${kind ?? ''}${summary ? `\n${summary}` : ''}`,
-    }
+    // 故意不设置 this.text: LogicFlow 基类会额外渲染一层 text,
+    // 与自定义视图里的文字重复并重叠。文字完全由 getShape 从 properties 绘制。
   }
 }
 
@@ -76,8 +69,20 @@ class WbNodeModel extends RectNodeModel {
 class WbNodeView extends RectNode {
   override getShape(): ReturnType<typeof h> {
     const model = this.props.model as any
-    const { x, y, width, height, radius, fill, stroke, strokeWidth, text } = model
-    const lines = String(text?.value ?? '').split('\n')
+    const { x, y, width, height, radius, fill, stroke, strokeWidth } = model
+    const properties = (model.properties ?? {}) as {
+      label?: string
+      kind?: string
+      params?: Record<string, string>
+    }
+    const label = String(properties.label ?? '')
+    const kind = String(properties.kind ?? '')
+    const params = properties.params ?? {}
+    const summary = Object.entries(params)
+      .map(([k, v]) => `${k}=${v.slice(0, 24)}`)
+      .join(' · ')
+    const line1 = `${label}${kind ? ` · ${kind}` : ''}`.trim()
+    const line2 = summary
     return h('g', {}, [
       h('rect', {
         x: x - width / 2,
@@ -92,21 +97,22 @@ class WbNodeView extends RectNode {
       }),
       h('text', {
         x,
-        y: y - 6,
+        y: y - 7,
         fill: '#dbe2ee',
         'font-size': 12,
+        'font-weight': 600,
         'text-anchor': 'middle',
         'dominant-baseline': 'middle',
-      }, lines[0] ?? ''),
-      lines[1]
+      }, line1.slice(0, 30)),
+      line2
         ? h('text', {
             x,
-            y: y + 14,
+            y: y + 15,
             fill: '#8b94a7',
             'font-size': 10,
             'text-anchor': 'middle',
             'dominant-baseline': 'middle',
-          }, lines[1].slice(0, 44))
+          }, line2.slice(0, 44))
         : null,
     ]) as ReturnType<typeof h>
   }
@@ -127,6 +133,32 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
   const handlersRef = React.useRef({ onSelect, onChange })
   handlersRef.current = { onSelect, onChange }
 
+  // --- fullscreen mode -------------------------------------------------------
+  const [fullscreen, setFullscreen] = React.useState(false)
+
+  const syncSize = React.useCallback(() => {
+    const container = containerRef.current
+    const lf = lfRef.current
+    if (!container || !lf) return
+    lf.resize(container.clientWidth || 640, container.clientHeight || 380)
+    lf.fitView()
+  }, [])
+
+  React.useEffect(() => {
+    // Wait a frame for the layout change, then fit the graph to the new size.
+    const timer = setTimeout(syncSize, 80)
+    return () => clearTimeout(timer)
+  }, [fullscreen, syncSize])
+
+  React.useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullscreen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreen])
+
   // --- one-time engine setup -------------------------------------------------
   React.useEffect(() => {
     const container = containerRef.current
@@ -134,8 +166,8 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
 
     const lf = new LogicFlowCtor({
       container,
-      width: 640,
-      height: 380,
+      width: container.clientWidth || 640,
+      height: container.clientHeight || 380,
       grid: false,
       stopScrollGraph: true,
       keyboard: { enabled: true },
@@ -250,12 +282,54 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
           拖拽节点改变执行顺序; 连线按顺序自动生成; 点击节点选中。
         </div>
       </div>
-      <div
-        ref={containerRef}
-        style={{ flex: 1, height: 380, border: '1px solid #2a3140', borderRadius: 8, overflow: 'hidden', background: '#0d1117' }}
-      />
+      <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+        <div
+          ref={containerRef}
+          style={fullscreen ? fullscreenStyle : normalStyle}
+        />
+        <button
+          onClick={() => setFullscreen((v) => !v)}
+          title={fullscreen ? '退出全屏' : '全屏查看/编辑 (Esc 也可退出)'}
+          style={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            zIndex: 10,
+            background: 'rgba(23,27,34,0.9)',
+            border: '1px solid #2a3140',
+            color: '#dbe2ee',
+            borderRadius: 6,
+            padding: '4px 10px',
+            fontSize: 12,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          {fullscreen ? '退出全屏' : '⛶ 全屏'}
+        </button>
+      </div>
     </div>
   )
+}
+
+/** Inline (embedded) canvas container. */
+const normalStyle: React.CSSProperties = {
+  height: 380,
+  border: '1px solid #2a3140',
+  borderRadius: 8,
+  overflow: 'hidden',
+  background: '#0d1117',
+}
+
+/** Fullscreen canvas container covering the viewport. */
+const fullscreenStyle: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 9999,
+  border: 'none',
+  borderRadius: 0,
+  overflow: 'hidden',
+  background: '#0d1117',
 }
 
 const panelButtonStyle: React.CSSProperties = {
