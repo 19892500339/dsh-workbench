@@ -89,6 +89,8 @@ export interface ToolView {
   description: string
   /** Compact parameter JSON schema, when available. */
   parameters?: unknown
+  /** V2.3: true when this tool is currently hidden from the model by the workbench. */
+  hiddenFromModel?: boolean
 }
 
 /** A registered skill, projected for display. */

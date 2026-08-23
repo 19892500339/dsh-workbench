@@ -53,14 +53,25 @@ export function ToolPanel(props: PanelProps) {
     }
   }
 
-  async function toggle(name: string, enabled: boolean) {
-    await call('state.update', { patch: { toolToggles: { ...toggles, [name]: enabled } }, expectedRevision: snapshot.revision })
+  /**
+   * 开关语义: toolToggles[name] === false → 隐藏; 否则可见。
+   * checked 表示「已对模型隐藏」。
+   */
+  function isHidden(name: string): boolean {
+    return toggles[name] === false
+  }
+
+  async function toggle(name: string, wantHidden: boolean) {
+    // 勾选=隐藏(存 false), 取消勾选=恢复可见(存 true)。
+    await call('state.update', { patch: { toolToggles: { ...toggles, [name]: wantHidden ? false : true } }, expectedRevision: snapshot.revision })
     await refresh()
   }
 
+  const hiddenCount = tools.filter((t) => t.hiddenFromModel).length
+
   return (
     <div>
-      <Section title="已注册工具" right={<span style={styles.dim}>{tools.length} 个</span>}>
+      <Section title="已注册工具 (DSH 全量)" right={<span style={styles.dim}>{tools.length} 个 · 已隐藏 {hiddenCount} 个</span>}>
         {note && <div style={{ marginBottom: 8 }}>{okNote(note)}</div>}
         {tools.length === 0 && <Empty text="当前没有可展示的工具。" />}
         <table style={styles.table}>
@@ -73,18 +84,23 @@ export function ToolPanel(props: PanelProps) {
           </thead>
           <tbody>
             {tools.map((t) => (
-              <tr key={t.name}>
+              <tr key={t.name} style={t.hiddenFromModel ? { opacity: 0.65 } : undefined}>
                 <td style={styles.td}>
                   <button style={{ ...styles.button, padding: '2px 6px', fontSize: 11 }} onClick={() => { setSelected(t); setResult(null) }}>{t.name}</button>
+                  {t.hiddenFromModel && <span style={{ ...styles.warn, marginLeft: 6 }}>⛔ 已隐藏</span>}
                 </td>
                 <td style={styles.td}>{t.description}</td>
                 <td style={styles.td}>
-                  <Toggle checked={toggles[t.name] ?? false} onChange={(next) => void toggle(t.name, next)} label="" />
+                  <Toggle checked={isHidden(t.name)} onChange={(next) => void toggle(t.name, next)} label="" />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        <div style={styles.dim}>
+          这里展示 DSH 工具注册表中的全部工具(含被本工作台隐藏的); 隐藏工具仍可在此取消隐藏恢复。
+          「测试调用」对被隐藏工具同样可用。
+        </div>
       </Section>
 
       {selected && (

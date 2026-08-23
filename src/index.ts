@@ -339,12 +339,37 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     }))
   }
 
+  /**
+   * List EVERY registered tool: visible ones from the registry plus the ones
+   * this workbench has hidden via restrict (they read as absent from the
+   * registry, so they are re-attached here with a hidden marker so the panel
+   * can still show and restore them).
+   */
   function listTools(): ToolView[] {
-    return tools.schemas().map((t) => ({
+    const state = viewOf().value
+    const denied = new Set(
+      Object.entries(state.toolToggles)
+        .filter(([, on]) => on === false)
+        .map(([name]) => name),
+    )
+    const visible: ToolView[] = tools.schemas().map((t) => ({
       name: t.name,
       description: t.description,
       parameters: t.parameters,
+      hiddenFromModel: denied.has(t.name) ? true : undefined,
     }))
+    const seen = new Set(visible.map((t) => t.name))
+    for (const name of denied) {
+      if (seen.has(name)) continue
+      // Restricted-away: the registry no longer serves its schema, so only the
+      // name (and the fact it is hidden) can be shown until it is re-enabled.
+      visible.push({
+        name,
+        description: '(已对模型隐藏 — 注册表暂不可见, 取消隐藏后恢复)',
+        hiddenFromModel: true,
+      })
+    }
+    return visible
   }
 
   // --- mutations over the persisted state -----------------------------------
