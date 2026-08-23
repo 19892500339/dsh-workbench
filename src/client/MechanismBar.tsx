@@ -1,12 +1,12 @@
 /**
- * 对话输入区上方 (conversation.input.dock) 的「机制选项」条:
- * RAG / 工具 / 技能 / 工作流 四个开关。
+ * 对话输入框(composer)内部的「机制选项」—— 注册于 conversation.input.left,
+ * 与访问模式/附件/上传按钮同一行, 风格保持紧凑图标按钮。
  *
- * - ○ = DSH 原有机制(默认状态), 不注入任何内容;
- * - ● = 已切换为工作台内容: 宿主向模型注入对应机制的说明
- *   (检索知识库指引 / 工具可见性 / 技能清单 / 激活工作流步骤),
- *   模型每一步都能读到当前机制状态;
- * - 「一键还原默认」把全部机制恢复为 DSH 默认并清空隐藏配置。
+ * RAG / 工具 / 技能 / 工作流 四个开关:
+ * - 未激活(默认)= DSH 原有机制, 不注入任何内容;
+ * - 激活 = 用工作台配置「暂时替换」该机制, 宿主向模型注入机制说明
+ *   (检索知识库指引 / 工具可见性 / 技能清单 / 激活工作流步骤);
+ * - 「还原」把全部机制一键恢复 DSH 默认并清空隐藏配置。
  */
 import React from 'react'
 import { call } from './api.js'
@@ -69,8 +69,7 @@ export function MechanismBar(): React.ReactElement | null {
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '2px 0' }}>
-      <span style={{ fontSize: 11, color: '#8b94a7' }}>⚙️ 机制:</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 2px' }}>
       {DOMAINS.map((d) => {
         const active = overrides[d.key] === 'workbench'
         return (
@@ -78,10 +77,12 @@ export function MechanismBar(): React.ReactElement | null {
             key={d.key}
             disabled={busy}
             onClick={() => void flip(d.key)}
-            title={`${d.hint}。${active ? '当前=工作台配置, 点击还原为 DSH 默认' : '当前=DSH 默认机制, 点击切换为工作台配置'}`}
-            style={{ ...pill, background: active ? '#4d7cfe' : '#171b22', color: active ? '#fff' : '#dbe2ee' }}
+            title={`${d.icon} ${d.hint}。${active ? '当前=工作台配置, 点击还原为 DSH 默认' : '当前=DSH 默认机制, 点击切换为工作台配置'}`}
+            style={{ ...iconBtn, background: active ? '#4d7cfe' : 'transparent', color: active ? '#fff' : '#8b94a7', borderColor: active ? '#4d7cfe' : '#2a3140' }}
           >
-            {d.icon} {d.label} {active ? ' ●' : ' ○'}
+            {d.icon}
+            <span style={{ marginLeft: 2 }}>{d.label}</span>
+            <span style={{ marginLeft: 3, fontSize: 8 }}>{active ? '●' : ''}</span>
           </button>
         )
       })}
@@ -89,20 +90,25 @@ export function MechanismBar(): React.ReactElement | null {
         <button
           onClick={() => void resetAll()}
           title="全部机制恢复为 DSH 默认状态, 并清空工具/技能隐藏配置"
-          style={{ ...pill, background: '#171b22', color: '#e2544d' }}
+          style={{ ...iconBtn, background: 'transparent', color: '#e2544d', borderColor: '#5a3433' }}
         >
-          一键还原默认
+          ↺ 还原
         </button>
       )}
     </div>
   )
 }
 
-const pill: React.CSSProperties = {
+/** Compact button matching the composer tool-row chrome. */
+const iconBtn: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
   border: '1px solid #2a3140',
-  borderRadius: 999,
-  padding: '2px 10px',
+  borderRadius: 6,
+  padding: '3px 8px',
   fontSize: 11,
+  lineHeight: 1,
   cursor: 'pointer',
   fontFamily: 'inherit',
+  whiteSpace: 'nowrap',
 }

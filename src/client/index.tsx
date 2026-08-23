@@ -49,14 +49,15 @@ export function apply(ctx: WorkbenchClientCtx): void {
       ),
     ),
   )
-  // V3: mechanism switches (RAG / 工具 / 技能 / 工作流) above the composer.
+  // V3: mechanism switches (RAG / 工具 / 技能 / 工作流) INSIDE the composer,
+  // in the left tool row next to the attach/upload chrome.
   ctx.effect(() =>
-    ctx.slots.inject('conversation.input.dock', () =>
+    ctx.slots.inject('conversation.input.left', () =>
       ctx.slots.register(
         {
-          name: 'conversation.input.dock',
+          name: 'conversation.input.left',
           id: 'workbench-mechanisms',
-          order: 5,
+          order: 2,
           label: '工作台机制',
         },
         () => React.createElement(MechanismBar),
