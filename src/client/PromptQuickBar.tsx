@@ -1,8 +1,9 @@
 /**
- * 输入框下方(conversation.composer.dock)的提示词快捷条:
- * 显示「最近使用过的 3 个提示词」, 点击一键切换为生效提示词;
- * 点击「取消」清除当前生效提示词。
- * 数据经 /workbench/api RPC 从宿主读取(挂载与操作后刷新)。
+ * 对话输入框(composer)内部的「提示词」入口 — 注册于 conversation.input.left。
+ * 点击 📝 图标弹出选择框:
+ * - 「最近使用过的 3 个提示词」, 点击一键切换为生效提示词;
+ * - 有生效提示词时提供「取消生效」;
+ * - 数据经 /workbench/api RPC 从宿主读取(打开与操作后刷新)。
  */
 import React from 'react'
 import { call } from './api.js'
@@ -10,7 +11,9 @@ import type { StateSnapshot } from '../shared/types.js'
 
 export function PromptQuickBar(): React.ReactElement | null {
   const [snapshot, setSnapshot] = React.useState<StateSnapshot | null>(null)
+  const [open, setOpen] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
+  const rootRef = React.useRef<HTMLDivElement | null>(null)
 
   const load = React.useCallback(async () => {
     try {
@@ -24,6 +27,16 @@ export function PromptQuickBar(): React.ReactElement | null {
     void load()
   }, [load])
 
+  // Click outside closes the picker.
+  React.useEffect(() => {
+    if (!open) return
+    const onDown = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
   const prompts = snapshot?.value.prompts ?? []
   const activeId = snapshot?.value.activePromptId ?? ''
   const recent = prompts
@@ -31,13 +44,12 @@ export function PromptQuickBar(): React.ReactElement | null {
     .sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0))
     .slice(0, 3)
 
-  if (recent.length === 0 && !activeId) return null
-
   async function pick(id: string) {
     setBusy(true)
     try {
       await call('prompt.activate', { id })
       await load()
+      setOpen(false)
     } catch {
       // ignore
     } finally {
@@ -58,34 +70,87 @@ export function PromptQuickBar(): React.ReactElement | null {
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '2px 0' }}>
-      <span style={{ fontSize: 11, color: '#8b94a7' }}>🕘 提示词:</span>
-      {recent.map((p) => (
-        <button
-          key={p.id}
-          disabled={busy}
-          onClick={() => void pick(p.id)}
-          title={p.content.slice(0, 120)}
-          style={{ ...pill, background: p.id === activeId ? '#4d7cfe' : '#171b22', color: p.id === activeId ? '#fff' : '#dbe2ee' }}
-        >
-          {p.name}
-          {p.id === activeId ? ' ●' : ''}
-        </button>
-      ))}
-      {activeId ? (
-        <button disabled={busy} onClick={() => void clear()} style={{ ...pill, background: '#171b22', color: '#e2544d' }}>
-          取消
-        </button>
-      ) : null}
+    <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title={activeId ? '提示词: 切换最近使用 / 取消生效' : '提示词: 从最近使用中选择并生效'}
+        style={{ ...iconBtn, background: activeId ? '#3a5c9e' : 'transparent', borderColor: activeId ? '#3a5c9e' : '#2a3140' }}
+      >
+        📝{activeId ? '●' : ''}
+      </button>
+      {open && (
+        <div style={popover}>
+          <div style={popTitle}>🕘 提示词 · 最近使用</div>
+          {recent.length === 0 && (
+            <div style={{ color: '#8b94a7', padding: '6px 10px', fontSize: 12 }}>
+              还没有使用过的提示词, 去工作台「📝 Prompt」面板选用模板。
+            </div>
+          )}
+          {recent.map((p) => (
+            <button
+              key={p.id}
+              disabled={busy}
+              onClick={() => void pick(p.id)}
+              style={{ ...popItem, background: p.id === activeId ? '#233252' : 'transparent' }}
+            >
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+              {p.id === activeId && <span style={{ color: '#3fb96f' }}>● 生效中</span>}
+            </button>
+          ))}
+          {activeId ? (
+            <button disabled={busy} onClick={() => void clear()} style={{ ...popItem, color: '#e2544d' }}>
+              取消生效
+            </button>
+          ) : null}
+        </div>
+      )}
     </div>
   )
 }
 
-const pill: React.CSSProperties = {
+const iconBtn: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
   border: '1px solid #2a3140',
-  borderRadius: 999,
-  padding: '2px 10px',
+  borderRadius: 6,
+  padding: '3px 8px',
+  fontSize: 12,
+  lineHeight: 1,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+}
+
+const popover: React.CSSProperties = {
+  position: 'absolute',
+  bottom: 'calc(100% + 8px)',
+  left: 0,
+  width: 260,
+  zIndex: 1000,
+  background: '#171b22',
+  border: '1px solid #2a3140',
+  borderRadius: 8,
+  boxShadow: '0 6px 24px rgba(0,0,0,.5)',
+  padding: 6,
+}
+
+const popTitle: React.CSSProperties = {
   fontSize: 11,
+  color: '#8b94a7',
+  padding: '4px 8px',
+}
+
+const popItem: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  width: '100%',
+  textAlign: 'left',
+  border: 'none',
+  background: 'transparent',
+  color: '#dbe2ee',
+  borderRadius: 6,
+  padding: '6px 8px',
+  fontSize: 12,
   cursor: 'pointer',
   fontFamily: 'inherit',
 }

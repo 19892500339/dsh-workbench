@@ -1,27 +1,49 @@
 /**
- * 对话输入框(composer)内部的「机制选项」—— 注册于 conversation.input.left,
- * 与访问模式/附件/上传按钮同一行, 风格保持紧凑图标按钮。
- *
- * RAG / 工具 / 技能 / 工作流 四个开关:
- * - 未激活(默认)= DSH 原有机制, 不注入任何内容;
- * - 激活 = 用工作台配置「暂时替换」该机制, 宿主向模型注入机制说明
- *   (检索知识库指引 / 工具可见性 / 技能清单 / 激活工作流步骤);
- * - 「还原」把全部机制一键恢复 DSH 默认并清空隐藏配置。
+ * 对话输入框(composer)内部的「机制选项」— 注册于 conversation.input.left。
+ * 四个纯图标按钮: 📚 RAG · 🛠️ 工具 · 🧩 技能 · 🔄 工作流。
+ * 点击图标弹出该机制的选择面板:
+ * - 每项两个单选卡片: 「DSH 默认机制」/「工作台内容」;
+ * - 工作流面板额外显示当前激活的工作流;
+ * - 面板内可单独「还原该机制」; 激活的图标高亮。
+ * 数据经 /workbench/api RPC 从宿主读取。
  */
 import React from 'react'
 import { call } from './api.js'
 import type { MechanismOverrides, OverrideMode, StateSnapshot } from '../shared/types.js'
 
-const DOMAINS: Array<{ key: keyof MechanismOverrides; label: string; icon: string; hint: string }> = [
-  { key: 'rag', label: 'RAG', icon: '📚', hint: '知识检索: 默认=DSH 原有, 工作台=workbench_search+知识库' },
-  { key: 'tools', label: '工具', icon: '🛠️', hint: '工具可见性: 默认=全部工具, 工作台=按隐藏配置过滤' },
-  { key: 'skills', label: '技能', icon: '🧩', hint: '技能清单: 默认=DSH 原生, 工作台=注入工作台清单' },
-  { key: 'workflow', label: '工作流', icon: '🔄', hint: '流程执行: 默认=DSH 原生, 工作台=按激活工作流执行' },
+type Domain = keyof MechanismOverrides
+
+const DOMAINS: Array<{ key: Domain; label: string; icon: string }> = [
+  { key: 'rag', label: 'RAG · 知识检索', icon: '📚' },
+  { key: 'tools', label: '工具 · 可见性', icon: '🛠️' },
+  { key: 'skills', label: '技能 · 清单', icon: '🧩' },
+  { key: 'workflow', label: '工作流 · 执行', icon: '🔄' },
 ]
+
+const OPTIONS: Record<Domain, Array<{ mode: OverrideMode; title: string; desc: string }>> = {
+  rag: [
+    { mode: 'default', title: 'DSH 默认检索机制', desc: '不注入任何内容, 保持 DSH 原有行为' },
+    { mode: 'workbench', title: '工作台知识库', desc: '向模型注入 workbench_search 检索指引 (可传 kb_id)' },
+  ],
+  tools: [
+    { mode: 'default', title: '全部工具可见', desc: 'DSH 工具注册表全量对模型开放' },
+    { mode: 'workbench', title: '按工作台配置过滤', desc: '对模型隐藏的工具不可调用 (restrict 生效)' },
+  ],
+  skills: [
+    { mode: 'default', title: 'DSH 原生技能目录', desc: '技能由 DSH 注册表/预设决定' },
+    { mode: 'workbench', title: '注入工作台技能清单', desc: '模型按工作台技能清单使用技能' },
+  ],
+  workflow: [
+    { mode: 'default', title: 'DSH 原生工作流机制', desc: '不注入工作流步骤' },
+    { mode: 'workbench', title: '按激活工作流执行', desc: '注入激活工作流的名称与步骤, 模型严格按步骤执行' },
+  ],
+}
 
 export function MechanismBar(): React.ReactElement | null {
   const [snapshot, setSnapshot] = React.useState<StateSnapshot | null>(null)
+  const [openDomain, setOpenDomain] = React.useState<Domain | null>(null)
   const [busy, setBusy] = React.useState(false)
+  const rootRef = React.useRef<HTMLDivElement | null>(null)
 
   const load = React.useCallback(async () => {
     try {
@@ -35,19 +57,26 @@ export function MechanismBar(): React.ReactElement | null {
     void load()
   }, [load])
 
+  // Click outside closes the picker.
+  React.useEffect(() => {
+    if (!openDomain) return
+    const onDown = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpenDomain(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [openDomain])
+
   const overrides = snapshot?.value.overrides
   if (!overrides) return null
 
-  const anyWorkbench = (Object.values(overrides) as OverrideMode[]).some((m) => m === 'workbench')
+  const activeWorkflow =
+    snapshot?.value.workflows.find((w) => w.id === snapshot.value.activeWorkflowId) ?? snapshot?.value.workflows[0]
 
-  async function flip(domain: keyof MechanismOverrides) {
-    const ov = snapshot?.value.overrides
-    if (!ov) return
-    const current: OverrideMode = ov[domain] ?? 'default'
-    const next: OverrideMode = current === 'default' ? 'workbench' : 'default'
+  async function choose(domain: Domain, mode: OverrideMode) {
     setBusy(true)
     try {
-      await call('override.set', { domain, mode: next })
+      await call('override.set', { domain, mode })
       await load()
     } catch {
       // ignore
@@ -56,10 +85,10 @@ export function MechanismBar(): React.ReactElement | null {
     }
   }
 
-  async function resetAll() {
+  async function resetDomain(domain: Domain) {
     setBusy(true)
     try {
-      await call('override.resetAll', {})
+      await call('override.set', { domain, mode: 'default' })
       await load()
     } catch {
       // ignore
@@ -69,46 +98,104 @@ export function MechanismBar(): React.ReactElement | null {
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 2px' }}>
+    <div ref={rootRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 4, padding: '0 2px' }}>
       {DOMAINS.map((d) => {
         const active = overrides[d.key] === 'workbench'
         return (
           <button
             key={d.key}
             disabled={busy}
-            onClick={() => void flip(d.key)}
-            title={`${d.icon} ${d.hint}。${active ? '当前=工作台配置, 点击还原为 DSH 默认' : '当前=DSH 默认机制, 点击切换为工作台配置'}`}
-            style={{ ...iconBtn, background: active ? '#4d7cfe' : 'transparent', color: active ? '#fff' : '#8b94a7', borderColor: active ? '#4d7cfe' : '#2a3140' }}
+            onClick={() => setOpenDomain(openDomain === d.key ? null : d.key)}
+            title={`${d.icon} ${d.label}${active ? ' (工作台配置, 点击选择/还原)' : ' (DSH 默认, 点击选择)'}`}
+            style={{ ...iconBtn, background: active ? '#4d7cfe' : 'transparent', borderColor: active ? '#4d7cfe' : '#2a3140' }}
           >
             {d.icon}
-            <span style={{ marginLeft: 2 }}>{d.label}</span>
-            <span style={{ marginLeft: 3, fontSize: 8 }}>{active ? '●' : ''}</span>
           </button>
         )
       })}
-      {anyWorkbench && (
-        <button
-          onClick={() => void resetAll()}
-          title="全部机制恢复为 DSH 默认状态, 并清空工具/技能隐藏配置"
-          style={{ ...iconBtn, background: 'transparent', color: '#e2544d', borderColor: '#5a3433' }}
-        >
-          ↺ 还原
-        </button>
+
+      {openDomain && (
+        <div style={popover}>
+          <div style={popTitle}>
+            {DOMAINS.find((d) => d.key === openDomain)?.icon} {DOMAINS.find((d) => d.key === openDomain)?.label}
+            {openDomain === 'workflow' && activeWorkflow ? (
+              <span style={{ color: '#8b94a7', fontWeight: 400 }}> · 当前激活: {activeWorkflow.name}</span>
+            ) : null}
+          </div>
+          {OPTIONS[openDomain].map((opt) => {
+            const selected = overrides[openDomain] === opt.mode
+            return (
+              <button
+                key={opt.mode}
+                disabled={busy}
+                onClick={() => void choose(openDomain, opt.mode)}
+                style={{
+                  ...popItem,
+                  background: selected ? '#233252' : 'transparent',
+                  border: `1px solid ${selected ? '#4d7cfe' : 'transparent'}`,
+                }}
+              >
+                <span style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 12 }}>{selected ? '● ' : '○ '}{opt.title}</div>
+                  <div style={{ color: '#8b94a7', fontSize: 11, marginTop: 2 }}>{opt.desc}</div>
+                </span>
+              </button>
+            )
+          })}
+          {overrides[openDomain] === 'workbench' && (
+            <button disabled={busy} onClick={() => void resetDomain(openDomain)} style={{ ...popItem, color: '#e2544d' }}>
+              还原该机制为 DSH 默认
+            </button>
+          )}
+        </div>
       )}
     </div>
   )
 }
 
-/** Compact button matching the composer tool-row chrome. */
 const iconBtn: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   border: '1px solid #2a3140',
   borderRadius: 6,
   padding: '3px 8px',
-  fontSize: 11,
+  fontSize: 12,
   lineHeight: 1,
   cursor: 'pointer',
   fontFamily: 'inherit',
-  whiteSpace: 'nowrap',
+}
+
+const popover: React.CSSProperties = {
+  position: 'absolute',
+  bottom: 'calc(100% + 8px)',
+  left: 0,
+  width: 300,
+  zIndex: 1000,
+  background: '#171b22',
+  border: '1px solid #2a3140',
+  borderRadius: 8,
+  boxShadow: '0 6px 24px rgba(0,0,0,.5)',
+  padding: 6,
+}
+
+const popTitle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 600,
+  color: '#dbe2ee',
+  padding: '4px 8px',
+  display: 'flex',
+  gap: 6,
+}
+
+const popItem: React.CSSProperties = {
+  display: 'block',
+  width: '100%',
+  textAlign: 'left',
+  borderRadius: 6,
+  padding: '6px 8px',
+  fontSize: 12,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  color: '#dbe2ee',
+  marginBottom: 2,
 }
