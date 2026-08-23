@@ -404,8 +404,10 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     const state = viewOf().value
     // V2.1: stamp lastUsedAt so the panel can show the 3 most recent prompts.
     const prompts = state.prompts.map((p) => (p.id === id ? { ...p, lastUsedAt: Date.now() } : p))
-    const base = await updateState({ prompts, activePromptId: id })
-    return base
+    return updateState({ prompts, activePromptId: id })
+  }
+  async function deactivatePrompt(): Promise<SettingsView> {
+    return updateState({ activePromptId: '' })
   }
 
   async function testTool(name: string, args: unknown): Promise<{ ok: boolean; value?: unknown; error?: string }> {
@@ -512,6 +514,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     upsertPrompt,
     removePrompt,
     activatePrompt,
+    deactivatePrompt,
     promptTemplates: () => builtinPromptTemplates(),
   }
 

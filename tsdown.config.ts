@@ -26,7 +26,11 @@
  * (e.g. packages/client/ui-trajectory). All code here is original.
  */
 import { builtinModules } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
+
+/** Browser Web Crypto shim for dependencies that resolve the Node builtin. */
+const CRYPTO_SHIM = fileURLToPath(new URL('./src/client/shims/crypto.ts', import.meta.url))
 
 /** Node builtins must never survive into the browser module-loader factory. */
 const NODE_BUILTINS = new Set([
@@ -54,6 +58,9 @@ function purityGatePlugin(): NonNullable<UserConfig['plugins']> {
   return {
     name: 'dsh-workbench-client-purity',
     resolveId(source: string) {
+      // 'crypto' / 'node:crypto' are aliased to the browser Web Crypto shim
+      // (uuid@9's node entry), so they are safe in the module table.
+      if (source === 'crypto' || source === 'node:crypto') return null
       if (NODE_BUILTINS.has(source)) {
         throw new Error(
           `client bundle purity: Node builtin "${source}" cannot run in the browser module table — ` +
@@ -106,6 +113,11 @@ const clientConfig: UserConfig = {
   inputOptions: {
     resolve: {
       conditionNames: ['browser', 'import', 'require', 'default'],
+      // uuid@9's node entry imports the Node builtin; give the browser shim.
+      alias: {
+        crypto: CRYPTO_SHIM,
+        'node:crypto': CRYPTO_SHIM,
+      },
     },
   },
   plugins: [purityGatePlugin()],

@@ -45,6 +45,8 @@ export interface WorkbenchRuntime {
   upsertPrompt(prompt: PromptTemplate): Promise<SettingsView>
   removePrompt(id: string): Promise<SettingsView>
   activatePrompt(id: string): Promise<SettingsView>
+  /** V2.2: clear the active prompt (activePromptId = ''). */
+  deactivatePrompt(): Promise<SettingsView>
   /** V2.1: built-in domain prompt templates. */
   promptTemplates(): PromptTemplate[]
 }
@@ -144,6 +146,8 @@ export async function dispatch(runtime: WorkbenchRuntime, method: string, payloa
       return runtime.removePrompt(str(p['id'], 'id'))
     case 'prompt.activate':
       return runtime.activatePrompt(str(p['id'], 'id'))
+    case 'prompt.deactivate':
+      return runtime.deactivatePrompt()
     case 'prompt.templates':
       return runtime.promptTemplates()
     default:

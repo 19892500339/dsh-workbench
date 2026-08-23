@@ -172,15 +172,19 @@ export function WorkflowPanel(props: PanelProps) {
           {view === 'graph' ? (
             <>
               <div style={{ fontSize: 12, color: palette.dim, margin: '10px 0 6px' }}>
-                节点 ({draft.nodes.length}) — 拖拽节点改变执行顺序(按垂直位置), 相邻节点自动连线:
+                节点 ({draft.nodes.length}) — 用左侧面板添加节点, 画布内拖拽节点改变执行顺序(连线自动更新):
               </div>
               <WorkflowGraph
                 nodes={draft.nodes}
                 selectedId={graphSelected}
                 onSelect={setGraphSelected}
                 onChange={(next) => { setDraft({ ...draft, nodes: next }); setGraphSelected(null) }}
+                onAddNode={(kind) => {
+                  setDraft({ ...draft, nodes: [...draft.nodes, newNodeOf(kind)] })
+                  setGraphSelected(null)
+                }}
               />
-              {draft.nodes.length === 0 && <Empty text="还没有节点, 用下方表单添加。" />}
+              {draft.nodes.length === 0 && <Empty text="还没有节点, 用左侧面板添加。" />}
             </>
           ) : (
             <>
@@ -200,22 +204,24 @@ export function WorkflowPanel(props: PanelProps) {
             </>
           )}
 
-          <div style={{ borderTop: `1px solid ${palette.border}`, marginTop: 10, paddingTop: 10 }}>
-            <div style={{ fontSize: 12, color: palette.dim, marginBottom: 6 }}>添加节点:</div>
-            <div style={styles.row}>
-              <select style={styles.input} value={newKind} onChange={(e) => { setNewKind(e.target.value as WorkflowNode['kind']); setNewParams('') }}>
-                {NODE_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-              </select>
-              <input style={{ ...styles.input, flex: 1, minWidth: 140 }} value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="节点名称" />
-              <Button variant="primary" onClick={addNode}>添加</Button>
+          {view === 'list' && (
+            <div style={{ borderTop: `1px solid ${palette.border}`, marginTop: 10, paddingTop: 10 }}>
+              <div style={{ fontSize: 12, color: palette.dim, marginBottom: 6 }}>添加节点:</div>
+              <div style={styles.row}>
+                <select style={styles.input} value={newKind} onChange={(e) => { setNewKind(e.target.value as WorkflowNode['kind']); setNewParams('') }}>
+                  {NODE_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
+                </select>
+                <input style={{ ...styles.input, flex: 1, minWidth: 140 }} value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="节点名称" />
+                <Button variant="primary" onClick={addNode}>添加</Button>
+              </div>
+              <input
+                style={{ ...styles.input, width: '100%', marginTop: 4 }}
+                value={newParams}
+                onChange={(e) => setNewParams(e.target.value)}
+                placeholder={paramsPlaceholder(newKind)}
+              />
             </div>
-            <input
-              style={{ ...styles.input, width: '100%', marginTop: 4 }}
-              value={newParams}
-              onChange={(e) => setNewParams(e.target.value)}
-              placeholder={paramsPlaceholder(newKind)}
-            />
-          </div>
+          )}
         </Section>
       )}
 
@@ -306,4 +312,25 @@ function parsePairs(text: string): Record<string, string> {
     if (eq > 0) out[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim()
   }
   return out
+}
+
+/** A fresh node with sensible defaults for the canvas add-panel. */
+function newNodeOf(kind: WorkflowNode['kind']): WorkflowNode {
+  const label = kind === 'transform' ? '文本变换' : kind === 'prompt' ? '提示词' : kind === 'tool' ? '工具调用' : '输出'
+  let params: Record<string, string>
+  switch (kind) {
+    case 'prompt':
+      params = { text: '{{input}}' }
+      break
+    case 'transform':
+      params = { op: 'append', value: '' }
+      break
+    case 'tool':
+      params = { name: '' }
+      break
+    case 'output':
+      params = { format: 'markdown' }
+      break
+  }
+  return { id: `n${Date.now().toString(36)}`, kind, label, params }
 }
