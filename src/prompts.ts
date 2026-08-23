@@ -9,6 +9,19 @@
  */
 import type { PromptTemplate } from './shared/types.js'
 
+/**
+ * Escape template placeholders before prompt injection.
+ *
+ * DSH's system-prompt interpolator treats every `{{name}}` as a STRICT
+ * variable reference: an unknown one throws ("unknown prompt variable"),
+ * which would break the whole assembly whenever an activated template still
+ * contains unfilled placeholders. Rewriting `{{var}}` → `{var}` keeps the
+ * placeholder readable to the model while avoiding the `{{` trigger.
+ */
+export function safePromptText(content: string): string {
+  return content.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, '{$1}')
+}
+
 export function builtinPromptTemplates(): PromptTemplate[] {
   const list: Array<Omit<PromptTemplate, 'id'>> = [
     {

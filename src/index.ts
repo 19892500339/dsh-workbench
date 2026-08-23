@@ -27,7 +27,7 @@ import { testMcpServer, makeServerId, connectMcpServer } from './mcp.js'
 import { embedTexts, buildVectorIndex, searchVectors, fuseRrf, isEmbeddingConfigured } from './embedding.js'
 import type { VectorIndex } from './embedding.js'
 import { dryRunWorkflow, builtinTemplates } from './workflow.js'
-import { builtinPromptTemplates } from './prompts.js'
+import { builtinPromptTemplates, safePromptText } from './prompts.js'
 import { registerApiRoutes, WorkbenchApiError } from './api.js'
 import type { SettingsView, WorkbenchRuntime } from './api.js'
 import type {
@@ -434,7 +434,11 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
       text: () => {
         const state = viewOf().value
         const active = state.prompts.find((p) => p.id === state.activePromptId)
-        return active ? `【生效提示词: ${active.name}】\n${active.content}` : ''
+        if (!active) return ''
+        // safePromptText: DSH treats {{var}} as a strict variable reference and
+        // throws on unknowns, which would break assembly for any template with
+        // unfilled placeholders. {var} keeps them readable without triggering.
+        return `【生效提示词: ${active.name}】\n${safePromptText(active.content)}`
       },
     }),
   )
