@@ -43,6 +43,7 @@ export function PromptQuickBar(): React.ReactElement | null {
     .filter((p) => (p.lastUsedAt ?? 0) > 0)
     .sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0))
     .slice(0, 3)
+  const activePrompt = activeId ? (prompts.find((p) => p.id === activeId) ?? null) : null
 
   async function pick(id: string) {
     setBusy(true)
@@ -81,6 +82,19 @@ export function PromptQuickBar(): React.ReactElement | null {
       {open && (
         <div style={popover}>
           <div style={popTitle}>🕘 提示词 · 最近使用</div>
+          {activePrompt && (
+            <div style={{ border: '1px solid #2f5d50', background: '#14211d', borderRadius: 6, padding: 8, marginBottom: 6 }}>
+              <div style={{ color: '#3fb96f', fontWeight: 600, fontSize: 12, marginBottom: 4 }}>
+                ● 当前生效: {activePrompt.name}
+              </div>
+              <pre style={{ margin: 0, color: '#9fb8ae', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 160, overflowY: 'auto' }}>
+                {injectedPreview(activePrompt)}
+              </pre>
+              <div style={{ color: '#8b94a7', fontSize: 10, marginTop: 4 }}>
+                以上为模型每个步骤实际收到的注入内容(轨迹视图不显示系统提示词, 属 DSH 平台行为)。
+              </div>
+            </div>
+          )}
           {recent.length === 0 && (
             <div style={{ color: '#8b94a7', padding: '6px 10px', fontSize: 12 }}>
               还没有使用过的提示词, 去工作台「📝 Prompt」面板选用模板。
@@ -106,6 +120,12 @@ export function PromptQuickBar(): React.ReactElement | null {
       )}
     </div>
   )
+}
+
+/** Mirror of the host injection (safePromptText): {{var}} → {var}. */
+function injectedPreview(p: { name: string; content: string }): string {
+  const safe = p.content.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, '{$1}')
+  return `【生效提示词: ${p.name}】(以下为当前必须严格遵守的指令, 请完整按其要求执行, 不要省略其中的格式与步骤要求)\n${safe}`
 }
 
 const iconBtn: React.CSSProperties = {
