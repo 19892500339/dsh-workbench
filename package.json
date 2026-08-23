@@ -57,7 +57,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/your-org/dsh-workbench.git"
+    "url": "git+https://github.com/19892500339/dsh-workbench.git"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

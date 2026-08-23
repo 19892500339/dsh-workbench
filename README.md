@@ -26,7 +26,7 @@ All configuration persists through the host `settings` service (default `~/.dsh/
 dsh plugin --profile web add dsh-workbench
 
 # from GitHub
-dsh plugin --profile web add git+https://github.com/<your-org>/dsh-workbench.git
+dsh plugin --profile web add git+https://github.com/19892500339/dsh-workbench.git
 
 # local development
 cd dsh-workbench && npm install && npm run build

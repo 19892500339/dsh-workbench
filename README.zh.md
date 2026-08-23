@@ -26,7 +26,7 @@
 dsh plugin --profile web add dsh-workbench
 
 # 方式二: 从 GitHub 安装
-dsh plugin --profile web add git+https://github.com/<your-org>/dsh-workbench.git
+dsh plugin --profile web add git+https://github.com/19892500339/dsh-workbench.git
 
 # 方式三: 本地开发
 cd dsh-workbench && npm install && npm run build
