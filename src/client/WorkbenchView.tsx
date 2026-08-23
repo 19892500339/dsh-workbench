@@ -13,19 +13,21 @@ import { SkillPanel } from './modules/SkillPanel.js'
 import { ToolPanel } from './modules/ToolPanel.js'
 import { PromptPanel } from './modules/PromptPanel.js'
 import type { StateSnapshot } from '../shared/types.js'
+import { t, useLocale } from './i18n.js'
 
 type ModuleId = 'rag' | 'mcp' | 'workflow' | 'skill' | 'tool' | 'prompt'
 
-const MODULES: Array<{ id: ModuleId; label: string; icon: string; hint: string }> = [
-  { id: 'rag', label: 'RAG', icon: '📚', hint: '知识检索' },
-  { id: 'mcp', label: 'MCP', icon: '🔌', hint: '外部服务' },
-  { id: 'workflow', label: '工作流', icon: '🔄', hint: '流程编排' },
-  { id: 'skill', label: '技能', icon: '🧩', hint: 'SKILL.md' },
-  { id: 'tool', label: '工具', icon: '🛠️', hint: '工具注册表' },
-  { id: 'prompt', label: 'Prompt', icon: '📝', hint: '提示词' },
+const MODULES: Array<{ id: ModuleId; labelKey: string; icon: string; hintKey: string }> = [
+  { id: 'rag', labelKey: 'navRag', icon: '📚', hintKey: 'navRagHint' },
+  { id: 'mcp', labelKey: 'navMcp', icon: '🔌', hintKey: 'navMcpHint' },
+  { id: 'workflow', labelKey: 'navWorkflow', icon: '🔄', hintKey: 'navWorkflowHint' },
+  { id: 'skill', labelKey: 'navSkills', icon: '🧩', hintKey: 'navSkillsHint' },
+  { id: 'tool', labelKey: 'navTools', icon: '🛠️', hintKey: 'navToolsHint' },
+  { id: 'prompt', labelKey: 'navPrompt', icon: '📝', hintKey: 'navPromptHint' },
 ]
 
 export function WorkbenchView(props: { sessionId?: string }) {
+  useLocale()
   const [active, setActive] = React.useState<ModuleId>('rag')
   const [snapshot, setSnapshot] = React.useState<StateSnapshot | null>(null)
   const [error, setError] = React.useState<string | null>(null)
@@ -57,26 +59,26 @@ export function WorkbenchView(props: { sessionId?: string }) {
           <button key={m.id} style={styles.navItem(active === m.id)} onClick={() => setActive(m.id)}>
             <span>{m.icon}</span>
             <span>
-              <div style={{ fontSize: 13, lineHeight: 1.2 }}>{m.label}</div>
-              <div style={{ fontSize: 10, opacity: 0.7 }}>{m.hint}</div>
+              <div style={{ fontSize: 13, lineHeight: 1.2 }}>{t(m.labelKey)}</div>
+              <div style={{ fontSize: 10, opacity: 0.7 }}>{t(m.hintKey)}</div>
             </span>
           </button>
         ))}
         <div style={{ marginTop: 'auto', ...styles.dim }}>
-          会话: {props.sessionId ? props.sessionId.slice(0, 8) : '—'}
+          {t('session')}: {props.sessionId ? props.sessionId.slice(0, 8) : '—'}
         </div>
       </nav>
       <div style={styles.content}>
         {error && (
           <div style={{ ...styles.danger, padding: 12, background: palette.panel, borderRadius: 8, marginBottom: 10 }}>
-            无法连接宿主服务: {error}
+            {t('hostUnreachable')} {error}
             <div style={{ marginTop: 6 }}>
-              <button style={styles.button} onClick={() => void refresh()}>重试</button>
+              <button style={styles.button} onClick={() => void refresh()}>{t('retry')}</button>
             </div>
           </div>
         )}
-        {loading && !snapshot && <div style={{ ...styles.dim, padding: 24 }}>加载中…</div>}
-        {!loading && !snapshot && !error && <div style={{ ...styles.dim, padding: 24 }}>等待宿主数据…</div>}
+        {loading && !snapshot && <div style={{ ...styles.dim, padding: 24 }}>{t('loading')}</div>}
+        {!loading && !snapshot && !error && <div style={{ ...styles.dim, padding: 24 }}>{t('waitingHost')}</div>}
         {snapshot && (
           <ErrorBoundary label="工作台面板">
             {active === 'rag' && <RagPanel snapshot={snapshot} refresh={refresh} />}

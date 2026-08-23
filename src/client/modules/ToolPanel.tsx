@@ -7,6 +7,7 @@
 import React from 'react'
 import { call, errorMessage } from '../api.js'
 import { Section, Field, Button, Empty, ErrorNote, Toggle, styles, okNote, palette } from '../ui.js'
+import { t, useLocale } from '../i18n.js'
 import type { StateSnapshot, ToolView } from '../../shared/types.js'
 
 export interface PanelProps {
@@ -15,6 +16,7 @@ export interface PanelProps {
 }
 
 export function ToolPanel(props: PanelProps) {
+  useLocale()
   const { snapshot, refresh } = props
   const tools = snapshot.tools
   const toggles = snapshot.value.toolToggles
@@ -71,59 +73,58 @@ export function ToolPanel(props: PanelProps) {
 
   return (
     <div>
-      <Section title="已注册工具 (DSH 全量)" right={<span style={styles.dim}>{tools.length} 个 · 已隐藏 {hiddenCount} 个</span>}>
+      <Section title={t('tlAll')} right={<span style={styles.dim}>{tools.length} {t('tlCount', { n: hiddenCount })}</span>}>
         {note && <div style={{ marginBottom: 8 }}>{okNote(note)}</div>}
-        {tools.length === 0 && <Empty text="当前没有可展示的工具。" />}
+        {tools.length === 0 && <Empty text={t('tlEmpty')} />}
         <table style={styles.table}>
           <thead>
             <tr>
-              <th style={styles.th}>工具</th>
-              <th style={styles.th}>描述</th>
-              <th style={styles.th}>对模型隐藏</th>
+              <th style={styles.th}>{t('navTools')}</th>
+              <th style={styles.th}>{t('description')}</th>
+              <th style={styles.th}>{t('tlHide')}</th>
             </tr>
           </thead>
           <tbody>
-            {tools.map((t) => (
-              <tr key={t.name} style={t.hiddenFromModel ? { opacity: 0.65 } : undefined}>
+            {tools.map((tool) => (
+              <tr key={tool.name} style={tool.hiddenFromModel ? { opacity: 0.65 } : undefined}>
                 <td style={styles.td}>
-                  <button style={{ ...styles.button, padding: '2px 6px', fontSize: 11 }} onClick={() => { setSelected(t); setResult(null) }}>{t.name}</button>
-                  {t.hiddenFromModel && <span style={{ ...styles.warn, marginLeft: 6 }}>⛔ 已隐藏</span>}
+                  <button style={{ ...styles.button, padding: '2px 6px', fontSize: 11 }} onClick={() => { setSelected(tool); setResult(null) }}>{tool.name}</button>
+                  {tool.hiddenFromModel && <span style={{ ...styles.warn, marginLeft: 6 }}>{t('tlHiddenBadge')}</span>}
                 </td>
-                <td style={styles.td}>{t.description}</td>
+                <td style={styles.td}>{tool.description}</td>
                 <td style={styles.td}>
-                  <Toggle checked={isHidden(t.name)} onChange={(next) => void toggle(t.name, next)} label="" />
+                  <Toggle checked={isHidden(tool.name)} onChange={(next) => void toggle(tool.name, next)} label="" />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
         <div style={styles.dim}>
-          这里展示 DSH 工具注册表中的全部工具(含被本工作台隐藏的); 隐藏工具仍可在此取消隐藏恢复。
-          「测试调用」对被隐藏工具同样可用。
+          {t('tlNote')}
         </div>
       </Section>
 
       {selected && (
-        <Section title={`测试调用: ${selected.name}`}>
+        <Section title={`${t('tlTest')} ${selected.name}`}>
           {err && <ErrorNote text={err} />}
-          <Field label="入参 JSON">
-            <textarea style={{ ...styles.textarea, minHeight: 140 }} value={argsText} onChange={(e) => setArgsText(e.target.value)} placeholder='{"key": "value"}' />
+          <Field label={t('tlArgs')}>
+            <textarea style={{ ...styles.textarea, minHeight: 140 }} value={argsText} onChange={(e) => setArgsText(e.target.value)} placeholder={t('tlArgsPh')} />
           </Field>
           <div style={styles.row}>
-            <Button variant="primary" disabled={busy} onClick={() => void runTest()}>调用</Button>
-            <span style={styles.dim}>仍受 DSH 工具策略/审批约束; 只读工具可直接调用。</span>
+            <Button variant="primary" disabled={busy} onClick={() => void runTest()}>{t('tlCall')}</Button>
+            <span style={styles.dim}>{t('tlPolicyNote')}</span>
           </div>
           {result && (
             <div>
               <div style={{ marginBottom: 6 }}>
-                {result.ok ? okNote('调用成功') : <span style={styles.danger}>✗ 调用失败: {result.error}</span>}
+                {result.ok ? okNote(t('tlSuccess')) : <span style={styles.danger}>✗ {t('tlFailed')} {result.error}</span>}
               </div>
               <pre style={styles.pre}>{String(JSON.stringify(result.value ?? result.error, null, 2) ?? '')}</pre>
             </div>
           )}
           {selected.parameters ? (
             <details style={{ marginTop: 8 }}>
-              <summary style={{ fontSize: 12, color: palette.text, cursor: 'pointer' }}>查看入参 schema</summary>
+              <summary style={{ fontSize: 12, color: palette.text, cursor: 'pointer' }}>{t('tlSchema')}</summary>
               <pre style={styles.pre}>{String(JSON.stringify(selected.parameters, null, 2) ?? '')}</pre>
             </details>
           ) : null}

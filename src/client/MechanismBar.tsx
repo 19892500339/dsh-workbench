@@ -9,38 +9,40 @@
  */
 import React from 'react'
 import { call } from './api.js'
+import { t, useLocale } from './i18n.js'
 import type { MechanismOverrides, OverrideMode, RagOverrideMode, StateSnapshot } from '../shared/types.js'
 
 type Domain = keyof MechanismOverrides
 
-const DOMAINS: Array<{ key: Domain; label: string; icon: string }> = [
-  { key: 'rag', label: 'RAG · 知识检索', icon: '📚' },
-  { key: 'tools', label: '工具 · 可见性', icon: '🛠️' },
-  { key: 'skills', label: '技能 · 清单', icon: '🧩' },
-  { key: 'workflow', label: '工作流 · 执行', icon: '🔄' },
+const DOMAINS: Array<{ key: Domain; titleKey: string; icon: string }> = [
+  { key: 'rag', titleKey: 'ragTitle', icon: '📚' },
+  { key: 'tools', titleKey: 'toolsTitle', icon: '🛠️' },
+  { key: 'skills', titleKey: 'skillsTitle', icon: '🧩' },
+  { key: 'workflow', titleKey: 'workflowTitle', icon: '🔄' },
 ]
 
-const OPTIONS: Record<Domain, Array<{ mode: string; title: string; desc: string }>> = {
+const OPTIONS: Record<Domain, Array<{ mode: string; titleKey: string; descKey: string }>> = {
   rag: [
-    { mode: 'default', title: 'DSH 默认检索机制', desc: '不注入任何内容, 保持 DSH 原有行为' },
-    { mode: 'custom', title: '自定义检索', desc: '注入自定义检索参数(topK / 相似度阈值, 可在工作台 RAG 面板调整)' },
-    { mode: 'workbench', title: '工作台知识库', desc: '选择下方知识库后, 模型按该知识库检索 (workbench_search + kb_id)' },
+    { mode: 'default', titleKey: 'ragDefault', descKey: 'ragDefaultDesc' },
+    { mode: 'custom', titleKey: 'ragCustom', descKey: 'ragCustomDesc' },
+    { mode: 'workbench', titleKey: 'ragKb', descKey: 'ragKbDesc' },
   ],
   tools: [
-    { mode: 'default', title: '全部工具可见', desc: 'DSH 工具注册表全量对模型开放' },
-    { mode: 'workbench', title: '按工作台配置过滤', desc: '对模型隐藏的工具不可调用 (restrict 生效)' },
+    { mode: 'default', titleKey: 'toolsDefault', descKey: 'toolsDefaultDesc' },
+    { mode: 'workbench', titleKey: 'toolsWorkbench', descKey: 'toolsWorkbenchDesc' },
   ],
   skills: [
-    { mode: 'default', title: 'DSH 原生技能目录', desc: '技能由 DSH 注册表/预设决定' },
-    { mode: 'workbench', title: '注入工作台技能清单', desc: '模型按工作台技能清单使用技能' },
+    { mode: 'default', titleKey: 'skillsDefault', descKey: 'skillsDefaultDesc' },
+    { mode: 'workbench', titleKey: 'skillsWorkbench', descKey: 'skillsWorkbenchDesc' },
   ],
   workflow: [
-    { mode: 'default', title: 'DSH 原生工作流机制', desc: '不注入工作流步骤' },
-    { mode: 'workbench', title: '按激活工作流执行', desc: '注入激活工作流的名称与步骤, 模型严格按步骤执行' },
+    { mode: 'default', titleKey: 'wfDefault', descKey: 'wfDefaultDesc' },
+    { mode: 'workbench', titleKey: 'wfWorkbench', descKey: 'wfWorkbenchDesc' },
   ],
 }
 
 export function MechanismBar(): React.ReactElement | null {
+  useLocale()
   const [snapshot, setSnapshot] = React.useState<StateSnapshot | null>(null)
   const [openDomain, setOpenDomain] = React.useState<Domain | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -120,13 +122,13 @@ export function MechanismBar(): React.ReactElement | null {
   return (
     <div ref={rootRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 4, padding: '0 2px' }}>
       {DOMAINS.map((d) => {
-        const active = overrides[d.key] === 'workbench'
+        const active = overrides[d.key] !== 'default'
         return (
           <button
             key={d.key}
             disabled={busy}
             onClick={() => setOpenDomain(openDomain === d.key ? null : d.key)}
-            title={`${d.icon} ${d.label}${active ? ' (工作台配置, 点击选择/还原)' : ' (DSH 默认, 点击选择)'}`}
+            title={`${d.icon} ${t(d.titleKey)}${active ? t('mechActive') : t('mechDefault')}`}
             style={{ ...iconBtn, background: active ? '#4d7cfe' : 'transparent', borderColor: active ? '#4d7cfe' : '#2a3140' }}
           >
             {d.icon}
@@ -137,9 +139,9 @@ export function MechanismBar(): React.ReactElement | null {
       {openDomain && (
         <div style={popover}>
           <div style={popTitle}>
-            {DOMAINS.find((d) => d.key === openDomain)?.icon} {DOMAINS.find((d) => d.key === openDomain)?.label}
+            {DOMAINS.find((d) => d.key === openDomain)?.icon} {t(DOMAINS.find((d) => d.key === openDomain)!.titleKey)}
             {openDomain === 'workflow' && activeWorkflow ? (
-              <span style={{ color: '#8b94a7', fontWeight: 400 }}> · 当前激活: {activeWorkflow.name}</span>
+              <span style={{ color: '#8b94a7', fontWeight: 400 }}> · {t('wfActive')} {activeWorkflow.name}</span>
             ) : null}
           </div>
           {OPTIONS[openDomain].map((opt) => {
@@ -156,21 +158,21 @@ export function MechanismBar(): React.ReactElement | null {
                 }}
               >
                 <span style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 12 }}>{selected ? '● ' : '○ '}{opt.title}</div>
-                  <div style={{ color: '#8b94a7', fontSize: 11, marginTop: 2 }}>{opt.desc}</div>
+                  <div style={{ fontWeight: 600, fontSize: 12 }}>{selected ? '● ' : '○ '}{t(opt.titleKey)}</div>
+                  <div style={{ color: '#8b94a7', fontSize: 11, marginTop: 2 }}>{t(opt.descKey)}</div>
                 </span>
               </button>
             )
           })}
           {openDomain === 'rag' && overrides.rag === 'workbench' && (
             <div style={{ borderTop: `1px solid #2a3140`, marginTop: 6, paddingTop: 6 }}>
-              <div style={{ fontSize: 11, color: '#8b94a7', padding: '2px 8px' }}>检索目标知识库:</div>
+              <div style={{ fontSize: 11, color: '#8b94a7', padding: '2px 8px' }}>{t('ragTarget')}</div>
               <button
                 disabled={busy}
                 onClick={() => void pickRagTarget('')}
                 style={{ ...popItem, color: snapshot!.value.rag.ragTargetKbId === '' ? '#4d7cfe' : '#dbe2ee' }}
               >
-                {snapshot!.value.rag.ragTargetKbId === '' ? '● ' : '○ '}默认语料目录
+                {snapshot!.value.rag.ragTargetKbId === '' ? '● ' : '○ '}{t('ragTargetDefault')}
               </button>
               {(snapshot?.value.rag.knowledgeBases ?? []).map((kb) => {
                 const sel = snapshot!.value.rag.ragTargetKbId === kb.id
@@ -185,7 +187,7 @@ export function MechanismBar(): React.ReactElement | null {
           )}
           {overrides[openDomain] !== 'default' && (
             <button disabled={busy} onClick={() => void resetDomain(openDomain)} style={{ ...popItem, color: '#e2544d' }}>
-              还原该机制为 DSH 默认
+              {t('restoreDomain')}
             </button>
           )}
         </div>

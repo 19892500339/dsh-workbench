@@ -7,9 +7,11 @@
  */
 import React from 'react'
 import { call } from './api.js'
+import { t, useLocale } from './i18n.js'
 import type { StateSnapshot } from '../shared/types.js'
 
 export function PromptQuickBar(): React.ReactElement | null {
+  useLocale()
   const [snapshot, setSnapshot] = React.useState<StateSnapshot | null>(null)
   const [open, setOpen] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
@@ -74,30 +76,30 @@ export function PromptQuickBar(): React.ReactElement | null {
     <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex' }}>
       <button
         onClick={() => setOpen((v) => !v)}
-        title={activeId ? '提示词: 切换最近使用 / 取消生效' : '提示词: 从最近使用中选择并生效'}
+        title={activeId ? t('promptSwitch') : t('promptPick')}
         style={{ ...iconBtn, background: activeId ? '#3a5c9e' : 'transparent', borderColor: activeId ? '#3a5c9e' : '#2a3140' }}
       >
         📝{activeId ? '●' : ''}
       </button>
       {open && (
         <div style={popover}>
-          <div style={popTitle}>🕘 提示词 · 最近使用</div>
+          <div style={popTitle}>{t('promptPicker')}</div>
           {activePrompt && (
             <div style={{ border: '1px solid #2f5d50', background: '#14211d', borderRadius: 6, padding: 8, marginBottom: 6 }}>
               <div style={{ color: '#3fb96f', fontWeight: 600, fontSize: 12, marginBottom: 4 }}>
-                ● 当前生效: {activePrompt.name}
+                {t('promptActive')} {activePrompt.name}
               </div>
               <pre style={{ margin: 0, color: '#9fb8ae', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 160, overflowY: 'auto' }}>
                 {injectedPreview(activePrompt)}
               </pre>
               <div style={{ color: '#8b94a7', fontSize: 10, marginTop: 4 }}>
-                以上为模型每个步骤实际收到的注入内容(轨迹视图不显示系统提示词, 属 DSH 平台行为)。
+                {t('promptInjectedNote')}
               </div>
             </div>
           )}
           {recent.length === 0 && (
             <div style={{ color: '#8b94a7', padding: '6px 10px', fontSize: 12 }}>
-              还没有使用过的提示词, 去工作台「📝 Prompt」面板选用模板。
+              {t('promptEmpty')}
             </div>
           )}
           {recent.map((p) => (
@@ -108,12 +110,12 @@ export function PromptQuickBar(): React.ReactElement | null {
               style={{ ...popItem, background: p.id === activeId ? '#233252' : 'transparent' }}
             >
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-              {p.id === activeId && <span style={{ color: '#3fb96f' }}>● 生效中</span>}
+              {p.id === activeId && <span style={{ color: '#3fb96f' }}>{t('ppActive')}</span>}
             </button>
           ))}
           {activeId ? (
             <button disabled={busy} onClick={() => void clear()} style={{ ...popItem, color: '#e2544d' }}>
-              取消生效
+              {t('promptClear')}
             </button>
           ) : null}
         </div>

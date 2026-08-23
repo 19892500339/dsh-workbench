@@ -7,6 +7,7 @@ import React from 'react'
 import { WorkbenchView } from './WorkbenchView.js'
 import { PromptQuickBar } from './PromptQuickBar.js'
 import { MechanismBar } from './MechanismBar.js'
+import { syncWithDshLocale, t } from './i18n.js'
 
 /** Hard dependency: the slot registry must be ready before we register. */
 export const inject = ['slots'] as const
@@ -18,10 +19,15 @@ interface SlotsServiceLike {
 
 interface WorkbenchClientCtx {
   slots: SlotsServiceLike
+  locale?: { getLocale(): { active: string }; subscribe(fn: () => void): () => void }
   effect(fn: () => void, label?: string): void
 }
 
 export function apply(ctx: WorkbenchClientCtx): void {
+  // i18n: follow the DSH web UI language (zh / en) for the whole plugin.
+  const disposeLocale = syncWithDshLocale(ctx.locale)
+  if (disposeLocale) ctx.effect(() => disposeLocale)
+
   ctx.effect(() =>
     ctx.slots.inject('conversation.view', () =>
       ctx.slots.register(
@@ -29,7 +35,7 @@ export function apply(ctx: WorkbenchClientCtx): void {
           name: 'conversation.view',
           id: 'workbench',
           order: 5,
-          label: '工作台',
+          label: t('navWorkflow') === '工作流' ? '工作台' : 'Workbench',
         },
         (props: { sessionId?: string }) => React.createElement(WorkbenchView, props),
       ),

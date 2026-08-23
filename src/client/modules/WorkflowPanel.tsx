@@ -7,6 +7,7 @@ import { call, errorMessage } from '../api.js'
 import { Section, Field, Button, Empty, ErrorNote, styles, okNote, palette } from '../ui.js'
 import { WorkflowGraph } from '../WorkflowGraph.js'
 import { ErrorBoundary } from '../ErrorBoundary.js'
+import { t, useLocale } from '../i18n.js'
 import type { StateSnapshot, WorkflowDefinition, WorkflowNode, WorkflowStepLog } from '../../shared/types.js'
 
 export interface PanelProps {
@@ -22,6 +23,7 @@ const NODE_KINDS: Array<{ value: WorkflowNode['kind']; label: string }> = [
 ]
 
 export function WorkflowPanel(props: PanelProps) {
+  useLocale()
   const { snapshot, refresh } = props
   const workflows = snapshot.value.workflows
   const [selectedId, setSelectedId] = React.useState<string | null>(workflows[0]?.id ?? null)
@@ -56,7 +58,7 @@ export function WorkflowPanel(props: PanelProps) {
     try {
       await call('workflow.save', { workflow: draft })
       await refresh()
-      setNote('工作流已保存')
+      setNote(t('wfSaved'))
     } catch (e) {
       setErr(errorMessage(e))
     } finally {
@@ -92,7 +94,7 @@ export function WorkflowPanel(props: PanelProps) {
       const templates = await call<WorkflowDefinition[]>('workflow.templates', {})
       for (const t of templates) await call('workflow.save', { workflow: t })
       await refresh()
-      setNote('内置模板已恢复')
+      setNote(t('wfRestored'))
     } catch (e) {
       setErr(errorMessage(e))
     } finally {
@@ -131,15 +133,15 @@ export function WorkflowPanel(props: PanelProps) {
 
   return (
     <div>
-      <Section title="工作流列表" right={
+      <Section title={t('wfList')} right={
         <span style={{ display: 'inline-flex', gap: 8 }}>
-          <Button disabled={busy} onClick={() => void restoreTemplates()}>恢复内置模板</Button>
-          <Button variant="primary" onClick={() => { setSelectedId(null); setDraft({ id: '', name: '新工作流', description: '', nodes: [] }) }}>新建</Button>
+          <Button disabled={busy} onClick={() => void restoreTemplates()}>{t('wfRestore')}</Button>
+          <Button variant="primary" onClick={() => { setSelectedId(null); setDraft({ id: '', name: t('wfNewName'), description: '', nodes: [] }) }}>{t('wfNew')}</Button>
         </span>
       }>
         {err && <ErrorNote text={err} />}
         {note && <div style={{ marginBottom: 8 }}>{okNote(note)}</div>}
-        {workflows.length === 0 && <Empty text="暂无工作流。点「新建」或「恢复内置模板」。首次启动会自动创建内置模板。" />}
+        {workflows.length === 0 && <Empty text={t('wfEmpty')} />}
         {workflows.map((w) => (
           <div key={w.id} style={{ ...styles.row, marginBottom: 4 }}>
             <button
@@ -147,43 +149,43 @@ export function WorkflowPanel(props: PanelProps) {
               onClick={() => select(w.id)}
             >
               <strong>{w.name}</strong>
-              {w.id === snapshot.value.activeWorkflowId && <span style={styles.ok}> ● 激活中</span>}
+              {w.id === snapshot.value.activeWorkflowId && <span style={styles.ok}> {t('wfActivated')}</span>}
               <span style={{ marginLeft: 8, opacity: 0.75, fontWeight: 400 }}>{w.description || '—'}</span>
             </button>
             <Button
               variant={w.id === snapshot.value.activeWorkflowId ? 'primary' : undefined}
               onClick={async () => { await call('workflow.activate', { id: w.id }); await refresh() }}
-              title="设为模型执行的工作流(工作流机制开启时生效)"
+              title={t('wfActivateTitle')}
             >
-              激活
+              {t('wfActivate')}
             </Button>
           </div>
         ))}
       </Section>
 
       {draft && (
-        <Section title={`编辑: ${draft.name || '(未命名)'}`} right={
+        <Section title={`${t('wfEdit')} ${draft.name || '(—)'}`} right={
           <span style={{ display: 'inline-flex', gap: 8 }}>
             <Button onClick={() => setView(view === 'list' ? 'graph' : 'list')}>
-              {view === 'list' ? '🎨 拖拽画布' : '📋 列表视图'}
+              {view === 'list' ? t('wfGraphView') : t('wfListView')}
             </Button>
-            <Button variant="danger" onClick={() => void remove()}>删除</Button>
-            <Button variant="primary" disabled={busy} onClick={() => void save()}>保存</Button>
+            <Button variant="danger" onClick={() => void remove()}>{t('delete')}</Button>
+            <Button variant="primary" disabled={busy} onClick={() => void save()}>{t('save')}</Button>
           </span>
         }>
-          <Field label="名称">
+          <Field label={t('name')}>
             <input style={{ ...styles.input, width: '100%' }} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
           </Field>
-          <Field label="描述">
+          <Field label={t('description')}>
             <input style={{ ...styles.input, width: '100%' }} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
           </Field>
 
           {view === 'graph' ? (
             <>
               <div style={{ fontSize: 12, color: palette.dim, margin: '10px 0 6px' }}>
-                节点 ({draft.nodes.length}) — 用左侧面板添加节点, 画布内拖拽节点改变执行顺序(连线自动更新):
+                {t('wfNodes')} ({draft.nodes.length}) {t('wfGraphHint')}
               </div>
-              <ErrorBoundary label="工作流画布">
+              <ErrorBoundary label={t('wfGraphView')}>
                 <WorkflowGraph
                   nodes={draft.nodes}
                   selectedId={graphSelected}
@@ -195,12 +197,12 @@ export function WorkflowPanel(props: PanelProps) {
                   }}
                 />
               </ErrorBoundary>
-              {draft.nodes.length === 0 && <Empty text="还没有节点, 用左侧面板添加。" />}
+              {draft.nodes.length === 0 && <Empty text={t('wfNodeEmptyGraph')} />}
             </>
           ) : (
             <>
-              <div style={{ fontSize: 12, color: palette.dim, margin: '10px 0 6px' }}>节点 ({draft.nodes.length}) — 按顺序执行:</div>
-              {draft.nodes.length === 0 && <Empty text="还没有节点。" />}
+              <div style={{ fontSize: 12, color: palette.dim, margin: '10px 0 6px' }}>{t('wfNodes')} ({draft.nodes.length}) {t('wfInOrder')}</div>
+              {draft.nodes.length === 0 && <Empty text={t('wfNodeEmpty')} />}
               {draft.nodes.map((n, i) => (
                 <div key={n.id} style={{ ...styles.row, background: palette.panelAlt, borderRadius: 6, padding: '6px 8px', marginBottom: 4 }}>
                   <span style={styles.code}>{i + 1}</span>
@@ -217,13 +219,13 @@ export function WorkflowPanel(props: PanelProps) {
 
           {view === 'list' && (
             <div style={{ borderTop: `1px solid ${palette.border}`, marginTop: 10, paddingTop: 10 }}>
-              <div style={{ fontSize: 12, color: palette.dim, marginBottom: 6 }}>添加节点:</div>
+              <div style={{ fontSize: 12, color: palette.dim, marginBottom: 6 }}>{t('wfAddNode')}</div>
               <div style={styles.row}>
                 <select style={styles.input} value={newKind} onChange={(e) => { setNewKind(e.target.value as WorkflowNode['kind']); setNewParams('') }}>
                   {NODE_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
                 </select>
-                <input style={{ ...styles.input, flex: 1, minWidth: 140 }} value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="节点名称" />
-                <Button variant="primary" onClick={addNode}>添加</Button>
+                <input style={{ ...styles.input, flex: 1, minWidth: 140 }} value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder={t('wfNodeName')} />
+                <Button variant="primary" onClick={addNode}>{t('add')}</Button>
               </div>
               <input
                 style={{ ...styles.input, width: '100%', marginTop: 4 }}
@@ -237,22 +239,22 @@ export function WorkflowPanel(props: PanelProps) {
       )}
 
       {draft && (
-        <Section title="手动运行 (干运行)">
-          <Field label="输入变量">
-            <textarea style={styles.textarea} value={inputsText} onChange={(e) => setInputsText(e.target.value)} placeholder="var=value, 每行一个; 对应节点里的 {{var}} 占位符" />
+        <Section title={t('wfRun')}>
+          <Field label={t('wfInputVars')}>
+            <textarea style={styles.textarea} value={inputsText} onChange={(e) => setInputsText(e.target.value)} placeholder={t('wfInputVarsPh')} />
           </Field>
           <div style={styles.row}>
-            <Button variant="primary" disabled={busy} onClick={() => void run()}>运行</Button>
-            {logs && <span style={styles.dim}>共 {logs.length} 步</span>}
+            <Button variant="primary" disabled={busy} onClick={() => void run()}>{t('run')}</Button>
+            {logs && <span style={styles.dim}>{t('wfSteps', { n: logs.length })}</span>}
           </div>
           {logs && (
             <table style={styles.table}>
               <thead>
                 <tr>
                   <th style={styles.th}>#</th>
-                  <th style={styles.th}>节点</th>
-                  <th style={styles.th}>状态</th>
-                  <th style={styles.th}>详情</th>
+                  <th style={styles.th}>{t('wfNodes')}</th>
+                  <th style={styles.th}>{t('wfStatusOk')}</th>
+                  <th style={styles.th}>{t('wfDetail')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -261,7 +263,7 @@ export function WorkflowPanel(props: PanelProps) {
                     <td style={styles.td}>{step.index}</td>
                     <td style={styles.td}>{step.label}</td>
                     <td style={styles.td}>
-                      {step.status === 'ok' ? <span style={styles.ok}>ok</span> : step.status === 'skipped' ? <span style={styles.warn}>跳过</span> : <span style={styles.danger}>错误</span>}
+                      {step.status === 'ok' ? <span style={styles.ok}>{t('wfStatusOk')}</span> : step.status === 'skipped' ? <span style={styles.warn}>{t('wfStatusSkip')}</span> : <span style={styles.danger}>{t('wfStatusErr')}</span>}
                     </td>
                     <td style={styles.td}>{step.detail}</td>
                   </tr>
@@ -290,13 +292,13 @@ function draftParams(kind: WorkflowNode['kind'], raw: string): Record<string, st
 function paramsPlaceholder(kind: WorkflowNode['kind']): string {
   switch (kind) {
     case 'prompt':
-      return '提示词正文, 支持 {{var}} 占位符'
+      return t('wfParamTextPh')
     case 'transform':
-      return '变换: append 文本 / prepend 文本 / replace 旧->新'
+      return t('wfParamTransformPh')
     case 'tool':
-      return '工具名, 例如 read_document'
+      return t('wfParamToolPh')
     case 'output':
-      return '输出格式, 例如 markdown'
+      return t('wfParamOutputPh')
   }
 }
 

@@ -7,6 +7,7 @@
 import React from 'react'
 import { call, errorMessage } from '../api.js'
 import { Section, Field, Button, Empty, ErrorNote, styles, okNote, palette } from '../ui.js'
+import { t, useLocale } from '../i18n.js'
 import type { PromptTemplate, StateSnapshot } from '../../shared/types.js'
 
 export interface PanelProps {
@@ -25,6 +26,7 @@ const SAMPLE_VARS: Record<string, string> = {
 }
 
 export function PromptPanel(props: PanelProps) {
+  useLocale()
   const { snapshot, refresh } = props
   const prompts = snapshot.value.prompts
   const activeId = snapshot.value.activePromptId
@@ -41,14 +43,14 @@ export function PromptPanel(props: PanelProps) {
 
   async function save() {
     if (!draft || !draft.name.trim()) {
-      setErr('请填写名称')
+      setErr(t('ppNeedName'))
       return
     }
     setErr(null)
     try {
       await call('prompt.save', { prompt: draft })
       await refresh()
-      setNote('模板已保存')
+      setNote(t('ppSaved'))
     } catch (e) {
       setErr(errorMessage(e))
     }
@@ -63,16 +65,16 @@ export function PromptPanel(props: PanelProps) {
   async function activate(id: string) {
     await call('prompt.activate', { id })
     await refresh()
-    setNote('已切换生效提示词 (下一个模型步骤生效)')
+    setNote(t('ppActivated'))
   }
 
   async function restoreTemplates() {
     setErr(null)
     try {
       const templates = await call<PromptTemplate[]>('prompt.templates', {})
-      for (const t of templates) await call('prompt.save', { prompt: t })
+      for (const tmpl of templates) await call('prompt.save', { prompt: tmpl })
       await refresh()
-      setNote('已恢复内置领域模板 (软件工程/代码审查/翻译/数据分析等)')
+      setNote(t('ppRestored'))
     } catch (e) {
       setErr(errorMessage(e))
     }
@@ -89,7 +91,7 @@ export function PromptPanel(props: PanelProps) {
   return (
     <div>
       {recent.length > 0 && (
-        <Section title="🕘 最近使用" right={<span style={styles.dim}>最近 3 个</span>}>
+        <Section title={t('ppRecent')} right={<span style={styles.dim}>{t('ppRecentHint')}</span>}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {recent.map((p) => (
               <button
@@ -104,28 +106,28 @@ export function PromptPanel(props: PanelProps) {
               </button>
             ))}
           </div>
-          <div style={{ ...styles.dim, marginTop: 6 }}>点击一键切换为生效提示词(计入最近使用)。</div>
+          <div style={{ ...styles.dim, marginTop: 6 }}>{t('ppRecentTip')}</div>
         </Section>
       )}
 
-      <Section title="提示词模板" right={
+      <Section title={t('ppTemplates')} right={
         <span style={{ display: 'inline-flex', gap: 8 }}>
-          <Button disabled={false} onClick={() => void restoreTemplates()}>恢复内置模板</Button>
-          <Button variant="primary" onClick={() => setDraft({ id: '', name: '新模板', content: '你是{{role}}。主题: {{topic}}' })}>新建</Button>
+          <Button disabled={false} onClick={() => void restoreTemplates()}>{t('ppRestore')}</Button>
+          <Button variant="primary" onClick={() => setDraft({ id: '', name: t('ppNewName'), content: '你是{role}。主题: {topic}' })}>{t('ppNew')}</Button>
         </span>
       }>
         {err && <ErrorNote text={err} />}
         {note && <div style={{ marginBottom: 8 }}>{okNote(note)}</div>}
-        {prompts.length === 0 && <Empty text="还没有提示词模板。" />}
+        {prompts.length === 0 && <Empty text={t('ppEmpty')} />}
         {prompts.map((p) => (
           <div key={p.id} style={{ padding: '8px 0', borderBottom: `1px solid ${palette.border}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <strong style={{ fontSize: 13 }}>{p.name}</strong>
-              {p.id === activeId && <span style={styles.ok}>● 生效中</span>}
+              {p.id === activeId && <span style={styles.ok}>{t('ppActive')}</span>}
               <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
-                <Button onClick={() => { setDraft({ ...p }); setErr(null) }}>编辑</Button>
-                <Button variant="primary" onClick={() => void activate(p.id)}>切换生效</Button>
-                <Button variant="danger" onClick={() => void remove(p.id)}>删除</Button>
+                <Button onClick={() => { setDraft({ ...p }); setErr(null) }}>{t('edit')}</Button>
+                <Button variant="primary" onClick={() => void activate(p.id)}>{t('ppSwitch')}</Button>
+                <Button variant="danger" onClick={() => void remove(p.id)}>{t('delete')}</Button>
               </span>
             </div>
             <div style={{ ...styles.dim, marginTop: 2, whiteSpace: 'pre-wrap', maxHeight: 60, overflow: 'hidden' }}>{p.content}</div>
@@ -134,24 +136,24 @@ export function PromptPanel(props: PanelProps) {
       </Section>
 
       {draft && (
-        <Section title={`编辑模板: ${draft.name || '(未命名)'}`}>
-          <Field label="名称">
+        <Section title={`${t('ppEdit')} ${draft.name || '(—)'}`}>
+          <Field label={t('name')}>
             <input style={{ ...styles.input, width: '100%' }} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
           </Field>
-          <Field label="正文">
-            <textarea style={{ ...styles.textarea, minHeight: 160 }} value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} placeholder="支持 {{变量}} 占位符, 如 {{role}} / {{topic}}" />
+          <Field label={t('ppBody')}>
+            <textarea style={{ ...styles.textarea, minHeight: 160 }} value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} placeholder={t('ppBodyPh')} />
           </Field>
           <div style={styles.row}>
-            <Button variant="primary" onClick={() => void save()}>保存</Button>
-            <span style={styles.dim}>占位符将在预览与注入时替换。</span>
+            <Button variant="primary" onClick={() => void save()}>{t('save')}</Button>
+            <span style={styles.dim}>{t('ppPlaceholderNote')}</span>
           </div>
 
           <div style={{ borderTop: `1px solid ${palette.border}`, marginTop: 10, paddingTop: 10 }}>
-            <Field label="预览变量">
-              <input style={{ ...styles.input, width: '100%' }} value={previewVars} onChange={(e) => setPreviewVars(e.target.value)} placeholder="var=value, 逗号分隔" />
+            <Field label={t('ppPreviewVars')}>
+              <input style={{ ...styles.input, width: '100%' }} value={previewVars} onChange={(e) => setPreviewVars(e.target.value)} placeholder={t('ppPreviewVarsPh')} />
             </Field>
-            <div style={{ fontSize: 12, color: palette.dim, margin: '6px 0' }}>渲染效果预览:</div>
-            <pre style={styles.pre}>{preview || '(空)'}</pre>
+            <div style={{ fontSize: 12, color: palette.dim, margin: '6px 0' }}>{t('ppPreview')}</div>
+            <pre style={styles.pre}>{preview || t('ppEmpty')}</pre>
           </div>
         </Section>
       )}

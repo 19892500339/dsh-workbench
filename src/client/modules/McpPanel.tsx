@@ -6,6 +6,7 @@
 import React from 'react'
 import { call, errorMessage } from '../api.js'
 import { Section, Field, Button, Empty, ErrorNote, Toggle, styles, okNote, palette } from '../ui.js'
+import { t, useLocale } from '../i18n.js'
 import type { McpServerConfig, McpTestResult, StateSnapshot } from '../../shared/types.js'
 
 export interface PanelProps {
@@ -24,6 +25,7 @@ const EMPTY_FORM: Omit<McpServerConfig, 'id' | 'enabled'> = {
 }
 
 export function McpPanel(props: PanelProps) {
+  useLocale()
   const { snapshot, refresh } = props
   const [form, setForm] = React.useState(EMPTY_FORM)
   const [argsText, setArgsText] = React.useState('')
@@ -43,15 +45,15 @@ export function McpPanel(props: PanelProps) {
   async function saveServer() {
     setErr(null)
     if (!form.name.trim()) {
-      setErr('请填写名称')
+      setErr(t('mcpNeedName'))
       return
     }
     if (form.transport === 'http' && !(form.url ?? '').trim()) {
-      setErr('http 服务器需要 url')
+      setErr(t('mcpNeedUrl'))
       return
     }
     if (form.transport === 'stdio' && !(form.command ?? '').trim()) {
-      setErr('stdio 服务器需要 command')
+      setErr(t('mcpNeedCmd'))
       return
     }
     setBusyId('__form__')
@@ -69,7 +71,7 @@ export function McpPanel(props: PanelProps) {
       setArgsText('')
       setEnvText('')
       setHeadersText('')
-      setNote('服务器已保存')
+      setNote(t('mcpSaved'))
     } catch (e) {
       setErr(errorMessage(e))
     } finally {
@@ -101,9 +103,9 @@ export function McpPanel(props: PanelProps) {
 
   return (
     <div>
-      <Section title="MCP 服务器" right={note ? okNote(note) : undefined}>
+      <Section title={t('mcpServers')} right={note ? okNote(note) : undefined}>
         {err && <ErrorNote text={err} />}
-        {servers.length === 0 && <Empty text="还没有配置 MCP 服务器, 在下方添加。" />}
+        {servers.length === 0 && <Empty text={t('mcpEmpty')} />}
         {servers.map((s) => (
           <div key={s.id} style={{ ...styles.card, background: palette.panelAlt, padding: 10 }}>
             <div style={styles.row}>
@@ -111,19 +113,19 @@ export function McpPanel(props: PanelProps) {
               <span style={styles.code}>{s.transport}</span>
               <span style={styles.dim}>{s.transport === 'stdio' ? (s.command ?? '') : (s.url ?? '')}</span>
               <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                <Toggle checked={s.enabled} onChange={(next) => void toggleServer(s.id, next)} label="启用" />
-                <Button disabled={busyId === s.id} onClick={() => void testServer(s)}>测试</Button>
-                <Button variant="danger" onClick={() => void removeServer(s.id)}>删除</Button>
+                <Toggle checked={s.enabled} onChange={(next) => void toggleServer(s.id, next)} label={t('enable')} />
+                <Button disabled={busyId === s.id} onClick={() => void testServer(s)}>{t('test')}</Button>
+                <Button variant="danger" onClick={() => void removeServer(s.id)}>{t('delete')}</Button>
               </span>
             </div>
             {testResult[s.id] && (
               <div style={{ marginTop: 6, fontSize: 12 }}>
                 {testResult[s.id]!.ok ? (
                   <div style={styles.ok}>
-                    ✓ 连接成功 · 工具: {testResult[s.id]!.tools?.length ? testResult[s.id]!.tools!.join(', ') : '(无)'}
+                    ✓ {t('mcpConnected')} {testResult[s.id]!.tools?.length ? testResult[s.id]!.tools!.join(', ') : '(—)'}
                   </div>
                 ) : (
-                  <div style={styles.danger}>✗ 连接失败: {testResult[s.id]!.error}</div>
+                  <div style={styles.danger}>✗ {t('mcpFailed')} {testResult[s.id]!.error}</div>
                 )}
               </div>
             )}
@@ -131,13 +133,13 @@ export function McpPanel(props: PanelProps) {
               <div style={{ marginTop: 6, fontSize: 12 }}>
                 {statusOf(s.id)!.connected ? (
                   <div style={styles.ok}>
-                    ● 运行中 · 已注册 {statusOf(s.id)!.tools.length} 个工具到 ctx.tools (wb_mcp__ 前缀)
+                    {t('mcpRunning', { n: statusOf(s.id)!.tools.length })}
                     {statusOf(s.id)!.tools.length > 0 && <div style={{ marginTop: 4, wordBreak: 'break-all' }}>{statusOf(s.id)!.tools.join('、')}</div>}
-                    {statusOf(s.id)!.error && <div style={styles.warn}>部分失败: {statusOf(s.id)!.error}</div>}
+                    {statusOf(s.id)!.error && <div style={styles.warn}>{t('mcpPartial')} {statusOf(s.id)!.error}</div>}
                   </div>
                 ) : (
                   <div style={styles.warn}>
-                    ● 未连接{s.enabled ? '' : ' (已禁用)'}
+                    {t('mcpOffline')}{s.enabled ? '' : t('mcpDisabled')}
                     {statusOf(s.id)!.error && <span> · {statusOf(s.id)!.error}</span>}
                   </div>
                 )}
@@ -147,44 +149,44 @@ export function McpPanel(props: PanelProps) {
         ))}
       </Section>
 
-      <Section title="添加服务器">
-        <Field label="名称">
-          <input style={{ ...styles.input, width: '100%' }} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如: exa-search" />
+      <Section title={t('mcpAdd')}>
+        <Field label={t('name')}>
+          <input style={{ ...styles.input, width: '100%' }} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('mcpNamePh')} />
         </Field>
-        <Field label="传输方式">
+        <Field label={t('mcpTransport')}>
           <select
             style={styles.input}
             value={form.transport}
             onChange={(e) => setForm({ ...form, transport: e.target.value as 'stdio' | 'http' })}
           >
-            <option value="stdio">stdio (本地命令)</option>
-            <option value="http">http (远程 streamable HTTP)</option>
+            <option value="stdio">{t('mcpStdio')}</option>
+            <option value="http">{t('mcpHttp')}</option>
           </select>
         </Field>
         {form.transport === 'stdio' ? (
           <>
-            <Field label="命令">
-              <input style={{ ...styles.input, width: '100%' }} value={form.command ?? ''} onChange={(e) => setForm({ ...form, command: e.target.value })} placeholder="npx / node / uvx" />
+            <Field label={t('mcpCommand')}>
+              <input style={{ ...styles.input, width: '100%' }} value={form.command ?? ''} onChange={(e) => setForm({ ...form, command: e.target.value })} placeholder={t('mcpCmdPh')} />
             </Field>
-            <Field label="参数">
-              <textarea style={styles.textarea} value={argsText} onChange={(e) => setArgsText(e.target.value)} placeholder="每行一个参数" />
+            <Field label={t('mcpArgs')}>
+              <textarea style={styles.textarea} value={argsText} onChange={(e) => setArgsText(e.target.value)} placeholder={t('mcpArgsPh')} />
             </Field>
-            <Field label="环境变量">
-              <textarea style={styles.textarea} value={envText} onChange={(e) => setEnvText(e.target.value)} placeholder="KEY=VALUE, 每行一个" />
+            <Field label={t('mcpEnv')}>
+              <textarea style={styles.textarea} value={envText} onChange={(e) => setEnvText(e.target.value)} placeholder={t('mcpEnvPh')} />
             </Field>
           </>
         ) : (
           <>
-            <Field label="URL">
-              <input style={{ ...styles.input, width: '100%' }} value={form.url ?? ''} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://mcp.example.com/mcp" />
+            <Field label={t('mcpUrl')}>
+              <input style={{ ...styles.input, width: '100%' }} value={form.url ?? ''} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder={t('mcpUrlPh')} />
             </Field>
-            <Field label="Headers">
-              <textarea style={styles.textarea} value={headersText} onChange={(e) => setHeadersText(e.target.value)} placeholder="Authorization=Bearer xxx, 每行一个" />
+            <Field label={t('mcpHeaders')}>
+              <textarea style={styles.textarea} value={headersText} onChange={(e) => setHeadersText(e.target.value)} placeholder={t('mcpHeadersPh')} />
             </Field>
           </>
         )}
         <div style={styles.row}>
-          <Button variant="primary" disabled={busyId === '__form__'} onClick={() => void saveServer()}>保存</Button>
+          <Button variant="primary" disabled={busyId === '__form__'} onClick={() => void saveServer()}>{t('save')}</Button>
         </div>
       </Section>
     </div>
