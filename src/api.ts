@@ -38,8 +38,14 @@ export interface WorkbenchRuntime {
   upsertWorkflow(workflow: WorkflowDefinition): Promise<SettingsView>
   removeWorkflow(id: string): Promise<SettingsView>
   runWorkflow(id: string, inputs: Record<string, string>): Promise<WorkflowStepLog[]>
+  /** V3: mark the workflow the model should execute under the workflow mechanism. */
+  activateWorkflow(id: string): Promise<SettingsView>
   /** The built-in starter templates (for restoring after deletion). */
   workflowTemplates(): WorkflowDefinition[]
+  /** V3: flip one mechanism switch between DSH default and workbench content. */
+  setOverride(domain: string, mode: 'default' | 'workbench'): Promise<SettingsView>
+  /** V3: restore every mechanism to DSH default (and clear tool/skill toggles). */
+  resetAllOverrides(): Promise<SettingsView>
   testTool(name: string, args: unknown): Promise<{ ok: boolean; value?: unknown; error?: string }>
   importSkill(path: string): Promise<{ ok: boolean; name?: string; error?: string }>
   upsertPrompt(prompt: PromptTemplate): Promise<SettingsView>
@@ -131,8 +137,18 @@ export async function dispatch(runtime: WorkbenchRuntime, method: string, payloa
       const inputs = isRecord(p['inputs']) ? p['inputs'] : {}
       return runtime.runWorkflow(str(p['id'], 'id'), inputs as Record<string, string>)
     }
+    case 'workflow.activate':
+      return runtime.activateWorkflow(str(p['id'], 'id'))
     case 'workflow.templates':
       return runtime.workflowTemplates()
+    case 'override.set': {
+      const domain = str(p['domain'], 'domain')
+      const mode = str(p['mode'], 'mode')
+      if (mode !== 'default' && mode !== 'workbench') throw new WorkbenchApiError('bad-request', 'mode 必须是 default 或 workbench')
+      return runtime.setOverride(domain, mode)
+    }
+    case 'override.resetAll':
+      return runtime.resetAllOverrides()
     case 'tool.test':
       return runtime.testTool(str(p['name'], 'name'), p['args'])
     case 'skill.import':

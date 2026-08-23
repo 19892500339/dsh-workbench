@@ -68,6 +68,7 @@ export const WorkbenchSchema = z.object({
       }),
     )
     .default([]),
+  activeWorkflowId: z.string().default(''),
   prompts: z
     .array(
       z.object({
@@ -82,6 +83,14 @@ export const WorkbenchSchema = z.object({
   activePromptId: z.string().default(''),
   toolToggles: z.dict(z.boolean()).default({}),
   skillToggles: z.dict(z.boolean()).default({}),
+  overrides: z
+    .object({
+      rag: z.string().default('default'),
+      tools: z.string().default('default'),
+      skills: z.string().default('default'),
+      workflow: z.string().default('default'),
+    })
+    .default({ rag: 'default', tools: 'default', skills: 'default', workflow: 'default' }),
 })
 
 /** Defaults used when a fresh document has no user layer yet. */
@@ -98,10 +107,12 @@ export function defaultState(): WorkbenchState {
     },
     mcpServers: [],
     workflows: [],
+    activeWorkflowId: '',
     prompts: [],
     activePromptId: '',
     toolToggles: {},
     skillToggles: {},
+    overrides: { rag: 'default', tools: 'default', skills: 'default', workflow: 'default' },
   }
 }
 

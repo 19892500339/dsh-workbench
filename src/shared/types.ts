@@ -132,6 +132,17 @@ export interface EmbeddingConfig {
   model: string
 }
 
+/** V3: mechanism override mode. 'default' = DSH's original mechanism untouched. */
+export type OverrideMode = 'default' | 'workbench'
+
+/** V3: which capability domains the workbench currently replaces. */
+export interface MechanismOverrides {
+  rag: OverrideMode
+  tools: OverrideMode
+  skills: OverrideMode
+  workflow: OverrideMode
+}
+
 /** The complete persisted workbench state (settings view). */
 export interface WorkbenchState {
   rag: {
@@ -147,12 +158,16 @@ export interface WorkbenchState {
   }
   mcpServers: McpServerConfig[]
   workflows: WorkflowDefinition[]
+  /** V3: the workflow the model should execute under the workflow mechanism. */
+  activeWorkflowId: string
   prompts: PromptTemplate[]
   activePromptId: string
   /** Workbench-local enable flags per tool name. */
   toolToggles: Record<string, boolean>
   /** Workbench-local enable flags per skill name. */
   skillToggles: Record<string, boolean>
+  /** V3: mechanism replacement switches (default = DSH original behavior). */
+  overrides: MechanismOverrides
 }
 
 /** V2: live connection status of one MCP server (tools registered on ctx.tools). */

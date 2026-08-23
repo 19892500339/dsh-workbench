@@ -1,11 +1,12 @@
 /**
  * dsh-workbench client entry: injects the 「工作台」 tab into the
- * conversation.view ring (after Chat / Trajectory) and a prompt quick bar
- * into the band under the composer (conversation.composer.dock).
+ * conversation.view ring (after Chat / Trajectory), a prompt quick bar under
+ * the composer, and the V3 mechanism switches above the composer.
  */
 import React from 'react'
 import { WorkbenchView } from './WorkbenchView.js'
 import { PromptQuickBar } from './PromptQuickBar.js'
+import { MechanismBar } from './MechanismBar.js'
 
 /** Hard dependency: the slot registry must be ready before we register. */
 export const inject = ['slots'] as const
@@ -45,6 +46,20 @@ export function apply(ctx: WorkbenchClientCtx): void {
           label: '提示词快捷',
         },
         () => React.createElement(PromptQuickBar),
+      ),
+    ),
+  )
+  // V3: mechanism switches (RAG / 工具 / 技能 / 工作流) above the composer.
+  ctx.effect(() =>
+    ctx.slots.inject('conversation.input.dock', () =>
+      ctx.slots.register(
+        {
+          name: 'conversation.input.dock',
+          id: 'workbench-mechanisms',
+          order: 5,
+          label: '工作台机制',
+        },
+        () => React.createElement(MechanismBar),
       ),
     ),
   )

@@ -117,8 +117,108 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
   }
   const updateState = async (patch: object, expectedRevision?: number): Promise<SettingsView> => {
     await ctx.settings.update(SETTINGS_NS, patch, expectedRevision)
-    applyToolRestrictions()
+    await syncOverrides()
     return viewOf()
+  }
+
+  // --- V3: mechanism overrides (default = DSH original behavior) -------------
+  type OverrideDomain = 'rag' | 'tools' | 'skills' | 'workflow'
+  const overrideDisposers = new Map<OverrideDomain, () => void>()
+
+  function disposeOverride(domain: OverrideDomain): void {
+    const dispose = overrideDisposers.get(domain)
+    if (dispose) {
+      dispose()
+      overrideDisposers.delete(domain)
+    }
+  }
+
+  /** Text describing which skills the model should use under the workbench. */
+  async function skillsNarrative(): Promise<string> {
+    const summaries = await ctx.skills.list().catch(() => [] as SkillSummary[])
+    if (summaries.length === 0) return '当前未发现可用技能。'
+    return summaries
+      .map((s) => `- ${s.name}: ${s.description}`)
+      .join('\n')
+  }
+
+  /** Text describing the currently active workflow. */
+  function activeWorkflowNarrative(state: WorkbenchState): string {
+    const active = state.workflows.find((w) => w.id === state.activeWorkflowId) ?? state.workflows[0]
+    if (!active) return '尚未配置工作流, 请在工作台「工作流」模块新建或恢复内置模板。'
+    const steps = active.nodes.map((n) => `${n.label}(${n.kind})`).join(' → ')
+    return `当前工作流: ${active.name} — ${steps}${active.description ? `; 说明: ${active.description}` : ''}`
+  }
+
+  /**
+   * Reconcile the four mechanism switches with DSH:
+   * - rag:      inject a prompt section telling the model the retrieval
+   *             mechanism now points at the workbench knowledge base;
+   * - tools:    gate ctx.tools.restrict on the switch (default = no filter,
+   *             all tools visible; workbench = per-tool hide list applies)
+   *             plus an explanatory prompt section;
+   * - skills:   inject the workbench skills list as the operative catalog;
+   * - workflow: inject the active workflow steps as the operative procedure.
+   * Every section is effect-scoped via systemPrompt.section() and its disposer
+   * is swapped when the switch flips, so "一键还原" fully restores DSH defaults.
+   */
+  async function syncOverrides(): Promise<void> {
+    const state = viewOf().value
+    const o = state.overrides
+
+    // rag
+    if (o.rag === 'workbench') {
+      if (!overrideDisposers.has('rag')) {
+        overrideDisposers.set('rag', ctx.systemPrompt.section({
+          name: 'workbench:mechanism:rag',
+          order: 910,
+          text: '工作台已将「知识检索」机制替换为工作台知识库: 需要检索本地语料/项目文档时调用 workbench_search(可传 kb_id 指定知识库); 如需恢复 DSH 原有检索机制, 请点击对话输入区工作台选项的「还原」。',
+        }))
+      }
+    } else {
+      disposeOverride('rag')
+    }
+
+    // tools
+    applyToolRestrictions()
+    if (o.tools === 'workbench') {
+      if (!overrideDisposers.has('tools')) {
+        overrideDisposers.set('tools', ctx.systemPrompt.section({
+          name: 'workbench:mechanism:tools',
+          order: 920,
+          text: '工作台已将「工具」机制替换为工作台配置: 模型只能看到工作台未隐藏的工具(被隐藏的工具不可调用); 如需恢复 DSH 原有全量工具机制, 请点击「还原」。',
+        }))
+      }
+    } else {
+      disposeOverride('tools')
+    }
+
+    // skills
+    if (o.skills === 'workbench') {
+      if (!overrideDisposers.has('skills')) {
+        const narrative = await skillsNarrative()
+        overrideDisposers.set('skills', ctx.systemPrompt.section({
+          name: 'workbench:mechanism:skills',
+          order: 930,
+          text: `工作台已将「技能」机制替换为工作台技能清单, 请按以下清单使用技能:\n${narrative}\n如需恢复 DSH 原有技能机制, 请点击「还原」。`,
+        }))
+      }
+    } else {
+      disposeOverride('skills')
+    }
+
+    // workflow
+    if (o.workflow === 'workbench') {
+      if (!overrideDisposers.has('workflow')) {
+        overrideDisposers.set('workflow', ctx.systemPrompt.section({
+          name: 'workbench:mechanism:workflow',
+          order: 940,
+          text: `工作台已将「工作流」机制替换为工作台工作流, 请严格按步骤执行:\n${activeWorkflowNarrative(state)}\n如需恢复 DSH 原有工作流机制, 请点击「还原」。`,
+        }))
+      }
+    } else {
+      disposeOverride('workflow')
+    }
   }
 
   // --- V2: runtime tool visibility (panel toggles → ctx.tools.restrict) -----
@@ -129,6 +229,8 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
       toolRestrictDispose = null
     }
     const state = viewOf().value
+    // 仅当「工具」机制开关为 workbench 时才过滤; 默认(default)时全部工具可见。
+    if (state.overrides.tools !== 'workbench') return
     const denied = Object.entries(state.toolToggles)
       .filter(([, on]) => on === false)
       .map(([name]) => name)
@@ -347,10 +449,15 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
    */
   function listTools(): ToolView[] {
     const state = viewOf().value
+    // 「对模型隐藏」仅在「工具」机制开关 = workbench 时生效; 默认(default)
+    // 模式下全部工具可见, 不标注隐藏。
+    const toolsMode = state.overrides.tools === 'workbench'
     const denied = new Set(
-      Object.entries(state.toolToggles)
-        .filter(([, on]) => on === false)
-        .map(([name]) => name),
+      toolsMode
+        ? Object.entries(state.toolToggles)
+            .filter(([, on]) => on === false)
+            .map(([name]) => name)
+        : [],
     )
     const visible: ToolView[] = tools.schemas().map((t) => ({
       name: t.name,
@@ -413,6 +520,24 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
         const def = tools.get(toolName)
         return def ? { name: def.name, description: def.description } : null
       },
+    })
+  }
+  async function activateWorkflow(id: string): Promise<SettingsView> {
+    return updateState({ activeWorkflowId: id })
+  }
+
+  // --- V3: mechanism switch API ----------------------------------------------
+  async function setOverride(domain: OverrideDomain, mode: 'default' | 'workbench'): Promise<SettingsView> {
+    const state = viewOf().value
+    const next = { ...state.overrides, [domain]: mode }
+    return updateState({ overrides: next })
+  }
+  async function resetAllOverrides(): Promise<SettingsView> {
+    // 一键还原: 所有机制回到 DSH 默认, 并清空工具/技能隐藏配置。
+    return updateState({
+      overrides: { rag: 'default', tools: 'default', skills: 'default', workflow: 'default' },
+      toolToggles: {},
+      skillToggles: {},
     })
   }
   async function upsertPrompt(prompt: PromptTemplate): Promise<SettingsView> {
@@ -533,6 +658,9 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     upsertWorkflow,
     removeWorkflow,
     runWorkflow,
+    activateWorkflow,
+    setOverride,
+    resetAllOverrides,
     workflowTemplates: () => builtinTemplates(),
     testTool,
     importSkill,
@@ -555,9 +683,9 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     void updateState({ prompts: builtinPromptTemplates() }).catch(() => undefined)
   }
 
-  // V2: apply persisted tool restrictions and connect enabled MCP servers
-  // asynchronously (failures are recorded, never block the plugin tree).
-  applyToolRestrictions()
+  // V3: reconcile the persisted mechanism switches (default = DSH behavior)
+  // and connect enabled MCP servers asynchronously (never block the tree).
+  void syncOverrides()
   for (const server of initial.mcpServers) {
     if (server.enabled) void syncServerConnection(server)
   }

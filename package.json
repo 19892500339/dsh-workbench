@@ -1,6 +1,6 @@
 {
   "name": "dsh-workbench",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "智能体能力可视化编排工作台 (DeepSeek Harness 插件): 在对话标签栏新增「工作台」页签, 可视化编排 RAG / MCP / 工作流 / 技能 / 工具 / Prompt 六大能力模块, 并注册 workbench_search 知识检索工具。",
   "keywords": [
     "deepseek",

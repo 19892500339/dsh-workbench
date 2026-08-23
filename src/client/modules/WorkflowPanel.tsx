@@ -147,8 +147,16 @@ export function WorkflowPanel(props: PanelProps) {
               onClick={() => select(w.id)}
             >
               <strong>{w.name}</strong>
+              {w.id === snapshot.value.activeWorkflowId && <span style={styles.ok}> ● 激活中</span>}
               <span style={{ marginLeft: 8, opacity: 0.75, fontWeight: 400 }}>{w.description || '—'}</span>
             </button>
+            <Button
+              variant={w.id === snapshot.value.activeWorkflowId ? 'primary' : undefined}
+              onClick={async () => { await call('workflow.activate', { id: w.id }); await refresh() }}
+              title="设为模型执行的工作流(工作流机制开启时生效)"
+            >
+              激活
+            </Button>
           </div>
         ))}
       </Section>
