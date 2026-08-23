@@ -41,6 +41,14 @@ const CRYPTO_SHIM = fileURLToPath(new URL('./src/client/shims/crypto.ts', import
  */
 const LOGICFLOW_ESM = fileURLToPath(new URL('./node_modules/@logicflow/core/es/index.js', import.meta.url))
 
+/**
+ * uuid@9 ships node and browser builds but no `exports` map, so bundlers pick
+ * the node entry: its `native.js` destructures `crypto.randomUUID`, which
+ * loses `this` and throws "Illegal invocation" in the browser. Point the
+ * specifier at the pure ESM browser build (Web Crypto getRandomValues).
+ */
+const UUID_BROWSER = fileURLToPath(new URL('./node_modules/uuid/dist/esm-browser/index.js', import.meta.url))
+
 /** Node builtins must never survive into the browser module-loader factory. */
 const NODE_BUILTINS = new Set([
   ...builtinModules,
@@ -127,6 +135,7 @@ const clientConfig: UserConfig = {
         crypto: CRYPTO_SHIM,
         'node:crypto': CRYPTO_SHIM,
         '@logicflow/core': LOGICFLOW_ESM,
+        uuid: UUID_BROWSER,
       },
     },
   },
