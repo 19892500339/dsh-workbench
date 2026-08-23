@@ -13,6 +13,15 @@ export const SETTINGS_NS = 'workbench'
 export const WorkbenchSchema = z.object({
   rag: z.object({
     corpusDir: z.string().default(''),
+    knowledgeBases: z
+      .array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          path: z.string(),
+        }),
+      )
+      .default([]),
     chunkSize: z.number().default(800),
     chunkOverlap: z.number().default(120),
     topK: z.number().default(5),
@@ -65,6 +74,8 @@ export const WorkbenchSchema = z.object({
         id: z.string(),
         name: z.string(),
         content: z.string().default(''),
+        // 0 = never used; schemastery has no .optional(), so default fills it.
+        lastUsedAt: z.number().default(0),
       }),
     )
     .default([]),
@@ -78,6 +89,7 @@ export function defaultState(): WorkbenchState {
   return {
     rag: {
       corpusDir: '',
+      knowledgeBases: [],
       chunkSize: 800,
       chunkOverlap: 120,
       topK: 5,

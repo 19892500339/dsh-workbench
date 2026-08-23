@@ -8,16 +8,16 @@
 
 | 模块 | 可视化操作 | 对应 DSH 机制 |
 |---|---|---|
-| 📚 RAG | 语料目录 / 分块参数 / 引擎选择(**bm25 \| vector \| hybrid**)/ 嵌入端点配置(OpenAI 兼容)/ 重建索引 / 检索测试 | 内置 BM25 + 原创向量引擎(RRF 混合)+ `workbench_search` 工具 |
+| 📚 RAG | **多知识库(选定文件夹为库, 可增删改)** / 语料目录 / 分块参数 / 引擎(**bm25 \| vector \| hybrid**)/ 嵌入端点 / 按库重建与检索 | 内置 BM25 + 原创向量引擎(RRF 混合)+ `workbench_search` 工具(支持 `kb_id`) |
 | 🔌 MCP | 增删 MCP server(`url` 或 `command`/`args`/`env`/`headers`)/ 启用禁用 / 连接测试 / **启用即自动注册 `wb_mcp__*` 工具到 ctx.tools** | `@modelcontextprotocol/sdk` 动态连接 + `ctx.tools.register`(与官方 `mcp__*` 桥共存) |
-| 🔄 工作流 | 内置模板(简历撰写、招聘筛选…)/ **@xyflow/react 拖拽画布排序连线** / 表单式节点编辑 / 手动干运行 + 逐步日志 | 确定性 dry-run 执行器;LLM 运行时执行留待 V3 |
+| 🔄 工作流 | 内置模板(简历撰写、招聘筛选…)/ **@xyflow/react 拖拽画布(拖动中实时重排连线, 松手归位网格)** / 表单式节点编辑 / 手动干运行 + 逐步日志 | 确定性 dry-run 执行器;LLM 运行时执行留待 V3 |
 | 🧩 技能 | 查看已安装技能(触发条件、描述)/ 从本地 `SKILL.md` 导入 / 关注开关 | `ctx.skills` 注册表展示 + `~/.dsh/skills/` 导入 |
 | 🛠️ 工具 | 查看已注册工具与入参 schema / 传参测试调用 / **「对模型隐藏」运行时开关** | `ctx.tools` 注册表 + `ctx.tools.restrict({ deny })` 立即影响模型可见性 |
-| 📝 Prompt | 模板 CRUD / `{{变量}}` 占位符预览 / 切换生效提示词 | `systemPrompt.variable('workbench_active_prompt')`,下一模型步骤生效 |
+| 📝 Prompt | **内置 8 套热门领域模板(软件工程/代码审查/翻译/数据分析/产品/学习/营销…)** / 模板 CRUD / `{{变量}}` 预览 / 切换生效 / **最近使用 3 个一键切换** | `systemPrompt.variable('workbench_active_prompt')`,下一模型步骤生效 |
 
 所有配置持久化到宿主 `settings` 服务(默认落盘 `~/.dsh/settings.yaml`),重启不丢。
 
-> **V2 亮点**: 工作流拖拽画布、RAG 向量/混合检索(自配 OpenAI 兼容嵌入端点)、MCP 服务器启用即把工具注册进 `ctx.tools`、工具面板可实时对模型隐藏工具。
+> **V2/V2.1 亮点**: 工作流拖拽画布(拖动中实时重排)、多知识库管理、RAG 向量/混合检索(自配 OpenAI 兼容嵌入端点)、MCP 服务器启用即把工具注册进 `ctx.tools`、工具面板可实时对模型隐藏工具、内置热门领域提示词 + 最近使用 3 个。
 
 ## 🚀 安装
 

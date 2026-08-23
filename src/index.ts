@@ -27,6 +27,7 @@ import { testMcpServer, makeServerId, connectMcpServer } from './mcp.js'
 import { embedTexts, buildVectorIndex, searchVectors, fuseRrf, isEmbeddingConfigured } from './embedding.js'
 import type { VectorIndex } from './embedding.js'
 import { dryRunWorkflow, builtinTemplates } from './workflow.js'
+import { builtinPromptTemplates } from './prompts.js'
 import { registerApiRoutes, WorkbenchApiError } from './api.js'
 import type { SettingsView, WorkbenchRuntime } from './api.js'
 import type {
@@ -134,17 +135,28 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     if (denied.length > 0) toolRestrictDispose = ctx.tools.restrict({ deny: denied })
   }
 
-  // --- RAG engine cache -----------------------------------------------------
-  let ragCache: { sig: string; index: CorpusIndex; vindex?: VectorIndex; info: RagIndexInfo } | null = null
+  // --- RAG engine caches (one per knowledge base; 'default' = corpusDir) ----
+  type RagEntry = { sig: string; index: CorpusIndex; vindex?: VectorIndex; info: RagIndexInfo }
+  const ragCaches = new Map<string, RagEntry>()
 
+  const defaultKbId = 'default'
   const ragConfigOf = (state: WorkbenchState): string => state.rag.corpusDir || config.corpusDir || defaultCorpusDir()
+
+  /** Resolve a kbId to its corpus directory; unknown ids fall back to default. */
+  function corpusDirOf(state: WorkbenchState, kbId?: string): string {
+    if (kbId && kbId !== defaultKbId) {
+      const kb = state.rag.knowledgeBases.find((k) => k.id === kbId)
+      if (kb && kb.path.trim()) return kb.path.trim()
+    }
+    return ragConfigOf(state)
+  }
 
   const wantsVectors = (state: WorkbenchState): boolean =>
     (state.rag.engine === 'vector' || state.rag.engine === 'hybrid') && isEmbeddingConfigured(state.rag.embedding)
 
-  async function rebuildRag(): Promise<RagIndexInfo> {
+  async function rebuildRag(kbId?: string): Promise<RagIndexInfo> {
     const state = viewOf().value
-    const corpusDir = ragConfigOf(state)
+    const corpusDir = corpusDirOf(state, kbId)
     await mkdir(corpusDir, { recursive: true })
     const started = Date.now()
     try {
@@ -174,7 +186,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
         vectorCount,
         embeddingModel,
       }
-      ragCache = { sig, index, vindex, info }
+      ragCaches.set(kbId ?? defaultKbId, { sig, index, vindex, info })
       return info
     } catch (error) {
       return {
@@ -188,18 +200,27 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     }
   }
 
-  async function searchRag(query: string, topK?: number): Promise<SearchHit[]> {
+  /** Ensure the cache for kbId is fresh, rebuilding when stale or missing. */
+  async function ensureRag(kbId?: string): Promise<RagEntry | null> {
     const state = viewOf().value
-    const corpusDir = ragConfigOf(state)
+    const key = kbId ?? defaultKbId
+    const corpusDir = corpusDirOf(state, kbId)
     await mkdir(corpusDir, { recursive: true })
-    if (ragCache === null || ragCache.info.corpusDir !== corpusDir) {
-      await rebuildRag()
+    const cached = ragCaches.get(key)
+    if (cached === undefined || cached.info.corpusDir !== corpusDir) {
+      await rebuildRag(kbId)
     } else {
       const sig = await corpusSignature(corpusDir)
-      if (sig !== ragCache.sig) await rebuildRag()
+      if (sig !== cached.sig) await rebuildRag(kbId)
     }
-    const index = ragCache?.index
-    if (!index) return []
+    return ragCaches.get(key) ?? null
+  }
+
+  async function searchRag(query: string, topK?: number, kbId?: string): Promise<SearchHit[]> {
+    const state = viewOf().value
+    const entry = await ensureRag(kbId)
+    if (!entry) return []
+    const index = entry.index
     const limit = Math.max(1, Math.min(topK ?? state.rag.topK, 50))
 
     // bm25-only, or vector requested but not configured → lexical path.
@@ -209,8 +230,8 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
 
     // vector / hybrid path (embed the query; rebuild lazily when no vectors).
     try {
-      if (!ragCache?.vindex) await rebuildRag()
-      const vindex = ragCache?.vindex
+      if (!entry.vindex) await rebuildRag(kbId)
+      const vindex = ragCaches.get(kbId ?? defaultKbId)?.vindex
       if (!vindex) return bm25Engine.search(index, query, limit)
       const queryVec = (await embedTexts([query], state.rag.embedding))[0]
       if (!queryVec) return bm25Engine.search(index, query, limit)
@@ -233,6 +254,25 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     }
   }
 
+  // --- V2.1: knowledge base CRUD --------------------------------------------
+  async function upsertKnowledgeBase(kb: { id?: string; name: string; path: string }): Promise<SettingsView> {
+    const state = viewOf().value
+    const trimmed = { name: kb.name.trim(), path: kb.path.trim() }
+    if (!trimmed.name || !trimmed.path) throw new WorkbenchApiError('bad-request', '知识库需要名称与路径')
+    const next = kb.id
+      ? { id: kb.id, ...trimmed }
+      : { id: `kb-${Date.now().toString(36)}`, ...trimmed }
+    const rest = state.rag.knowledgeBases.filter((k) => k.id !== next.id)
+    const view = await updateState({ rag: { ...state.rag, knowledgeBases: [...rest, next] } })
+    ragCaches.delete(next.id)
+    return view
+  }
+  async function removeKnowledgeBase(id: string): Promise<SettingsView> {
+    const state = viewOf().value
+    ragCaches.delete(id)
+    return updateState({ rag: { ...state.rag, knowledgeBases: state.rag.knowledgeBases.filter((k) => k.id !== id) } })
+  }
+
   // --- tool registration ----------------------------------------------------
   try {
     ctx.effect(() =>
@@ -244,6 +284,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
           parameters: {
             query: { type: 'string', required: true, description: '检索关键词或问题' },
             top_k: { type: 'number', description: '返回条数, 默认使用工作台配置' },
+            kb_id: { type: 'string', description: '知识库 id(工作台 RAG 面板中创建); 省略时检索默认语料目录' },
           },
           output: {
             schema: {
@@ -262,7 +303,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
             render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
           },
           async execute(args) {
-            return searchRag(args.query, args.top_k)
+            return searchRag(args.query, args.top_k, args.kb_id)
           },
         }),
       ),
@@ -360,7 +401,11 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     return updateState({ prompts: state.prompts.filter((p) => p.id !== id) })
   }
   async function activatePrompt(id: string): Promise<SettingsView> {
-    return updateState({ activePromptId: id })
+    const state = viewOf().value
+    // V2.1: stamp lastUsedAt so the panel can show the 3 most recent prompts.
+    const prompts = state.prompts.map((p) => (p.id === id ? { ...p, lastUsedAt: Date.now() } : p))
+    const base = await updateState({ prompts, activePromptId: id })
+    return base
   }
 
   async function testTool(name: string, args: unknown): Promise<{ ok: boolean; value?: unknown; error?: string }> {
@@ -445,13 +490,15 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
         revision: view.revision,
         skills: await listSkills(),
         tools: listTools(),
-        rag: ragCache ? { ...ragCache.info } : null,
+        rag: ragCaches.get(defaultKbId) ? { ...ragCaches.get(defaultKbId)!.info } : null,
         mcpStatus,
       }
     },
     updateState,
     rebuildRag,
     searchRag,
+    upsertKnowledgeBase,
+    removeKnowledgeBase,
     testServer,
     upsertServer,
     removeServer,
@@ -465,15 +512,19 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     upsertPrompt,
     removePrompt,
     activatePrompt,
+    promptTemplates: () => builtinPromptTemplates(),
   }
 
   // --- RPC route ------------------------------------------------------------
   ctx.effect(() => registerApiRoutes(ctx.webServer, runtime), 'dsh-workbench: /workbench/api routes')
 
-  // Warm the template list only when the user has none yet (first run).
+  // Warm the template lists only when the user has none yet (first run).
   const initial = viewOf().value
   if (initial.workflows.length === 0) {
     void updateState({ workflows: builtinTemplates() }).catch(() => undefined)
+  }
+  if (initial.prompts.length === 0) {
+    void updateState({ prompts: builtinPromptTemplates() }).catch(() => undefined)
   }
 
   // V2: apply persisted tool restrictions and connect enabled MCP servers

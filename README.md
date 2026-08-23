@@ -8,16 +8,16 @@ Adds a **「工作台 / Workbench」tab** to the conversation view ring (beside 
 
 | Module | Visual operations | Backing mechanism |
 |---|---|---|
-| 📚 RAG | corpus dir / chunk size & overlap / engine (**bm25 \| vector \| hybrid**) / OpenAI-compatible embeddings config / rebuild / search test | built-in BM25 + original vector engine (RRF fusion) + `workbench_search` tool |
+| 📚 RAG | **multiple knowledge bases (folder → KB, add/edit/remove)** / corpus dir / chunk size & overlap / engine (**bm25 \| vector \| hybrid**) / embeddings config / per-KB rebuild & search | built-in BM25 + original vector engine (RRF fusion) + `workbench_search` tool (supports `kb_id`) |
 | 🔌 MCP | server CRUD (`url` or `command`/`args`/`env`/`headers`) / enable toggle / connect test / **auto-registers `wb_mcp__*` tools on ctx.tools when enabled** | `@modelcontextprotocol/sdk` dynamic connect + `ctx.tools.register` (coexists with the official `mcp__*` bridge) |
-| 🔄 Workflow | built-in templates (resume writer, recruiter screen …) / **@xyflow/react drag canvas (reorder & chain edges)** / form node editor / dry-run with step logs | deterministic dry-run executor; LLM runtime execution is V3 |
+| 🔄 Workflow | built-in templates (resume writer, recruiter screen …) / **@xyflow/react drag canvas (live reorder while dragging, settles to grid on drop)** / form node editor / dry-run with step logs | deterministic dry-run executor; LLM runtime execution is V3 |
 | 🧩 Skills | list installed skills / import a local `SKILL.md` / follow toggles | `ctx.skills` registry + `~/.dsh/skills/` import |
 | 🛠️ Tools | list registered tools & schemas / test-call with args / **"hide from model" runtime toggle** | `ctx.tools` registry + `ctx.tools.restrict({ deny })` — effective immediately |
-| 📝 Prompt | template CRUD / `{{var}}` preview / switch the active prompt | `systemPrompt.variable('workbench_active_prompt')`, effective next model step |
+| 📝 Prompt | **8 built-in domain templates (software eng / code review / translation / data analysis / PM / learning / marketing…)** / CRUD / `{{var}}` preview / switch active / **one-click recent-3** | `systemPrompt.variable('workbench_active_prompt')`, effective next model step |
 
 All configuration persists through the host `settings` service (default `~/.dsh/settings.yaml`), surviving restarts.
 
-> **V2 highlights**: drag-canvas workflow editor, vector/hybrid RAG (bring-your-own OpenAI-compatible embeddings endpoint), MCP servers that register their tools on `ctx.tools` the moment they are enabled, and a live "hide tool from the model" switch.
+> **V2 / V2.1 highlights**: drag-canvas workflow editor with live reordering, multi knowledge-base management, vector/hybrid RAG (bring-your-own OpenAI-compatible embeddings endpoint), MCP servers that register their tools on `ctx.tools` the moment they are enabled, a live "hide tool from the model" switch, and built-in domain prompt templates with a recent-3 quick switcher.
 
 ## Install
 

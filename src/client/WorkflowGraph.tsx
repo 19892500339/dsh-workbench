@@ -142,42 +142,57 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
     [nodes],
   )
 
-  const onNodesChange = React.useCallback((changes: NodeChange[]) => {
-    for (const change of changes) {
-      if (change.type === 'position' && change.position) {
-        const position = change.position
-        setPositions((prev) => ({ ...prev, [change.id]: { x: position.x, y: position.y } }))
-      }
-    }
+  // Refs mirror live positions/nodes so drag handlers never read stale state.
+  const nodesRef = React.useRef(nodes)
+  nodesRef.current = nodes
+  const positionsRef = React.useRef(positions)
+  positionsRef.current = positions
+
+  /** Sort nodes by their current vertical position (stable fallback to index). */
+  const sortByY = React.useCallback((list: WorkflowNode[], pos: Record<string, { x: number; y: number }>) => {
+    const fallback = new Map(list.map((n, i) => [n.id, i]))
+    return [...list].sort((a, b) => {
+      const ya = pos[a.id]?.y ?? (fallback.get(a.id) ?? 0) * NODE_GAP
+      const yb = pos[b.id]?.y ?? (fallback.get(b.id) ?? 0) * NODE_GAP
+      if (ya !== yb) return ya - yb
+      return (fallback.get(a.id) ?? 0) - (fallback.get(b.id) ?? 0)
+    })
   }, [])
 
-  const onNodeDragStop = React.useCallback(
-    (_: unknown, node: Node) => {
-      const y = node.position.y
-      const reordered = [...nodes].sort((a, b) => {
-        const ya = positions[a.id]?.y ?? Number.POSITIVE_INFINITY
-        const yb = positions[b.id]?.y ?? Number.POSITIVE_INFINITY
-        return ya - yb
-      })
-      // The dragged node's y is authoritative even if positions lag a frame.
-      const dragged = nodes.find((n) => n.id === node.id)
-      if (dragged) {
-        const without = reordered.filter((n) => n.id !== node.id)
-        let inserted = false
-        const sorted: WorkflowNode[] = []
-        for (const n of without) {
-          if (!inserted && (positions[n.id]?.y ?? 0) > y) {
-            sorted.push(dragged)
-            inserted = true
+  const orderChanged = React.useCallback(
+    (a: WorkflowNode[], b: WorkflowNode[]) => a.some((n, i) => n.id !== b[i]?.id),
+    [],
+  )
+
+  const onNodesChange = React.useCallback(
+    (changes: NodeChange[]) => {
+      for (const change of changes) {
+        if (change.type === 'position' && change.position) {
+          const position = change.position
+          const next = { ...positionsRef.current, [change.id]: { x: position.x, y: position.y } }
+          positionsRef.current = next
+          setPositions(next)
+          // LIVE reorder while dragging: as the node crosses a neighbour, the
+          // chain edges re-order immediately (no waiting for mouse-up).
+          if (change.dragging) {
+            const sorted = sortByY(nodesRef.current, next)
+            if (orderChanged(nodesRef.current, sorted)) onChange(sorted)
           }
-          sorted.push(n)
         }
-        if (!inserted) sorted.push(dragged)
-        if (sorted.some((n, i) => n.id !== nodes[i]?.id)) onChange(sorted)
       }
     },
-    [nodes, positions, onChange],
+    [onChange, sortByY, orderChanged],
   )
+
+  const onNodeDragStop = React.useCallback(() => {
+    const sorted = sortByY(nodesRef.current, positionsRef.current)
+    if (orderChanged(nodesRef.current, sorted)) onChange(sorted)
+    // Settle into a clean vertical stack without visual jumps in order.
+    const next: Record<string, { x: number; y: number }> = {}
+    sorted.forEach((n, i) => { next[n.id] = { x: 0, y: i * NODE_GAP } })
+    positionsRef.current = next
+    setPositions(next)
+  }, [onChange, sortByY, orderChanged])
 
   return (
     <div style={{ width: '100%', height: 420, border: `1px solid ${palette.border}`, borderRadius: 8, overflow: 'hidden' }}>

@@ -27,8 +27,10 @@ export interface SettingsView {
 export interface WorkbenchRuntime {
   state(): Promise<StateSnapshot>
   updateState(patch: object, expectedRevision?: number): Promise<SettingsView>
-  rebuildRag(): Promise<RagIndexInfo>
-  searchRag(query: string, topK?: number): Promise<SearchHit[]>
+  rebuildRag(kbId?: string): Promise<RagIndexInfo>
+  searchRag(query: string, topK?: number, kbId?: string): Promise<SearchHit[]>
+  upsertKnowledgeBase(kb: { id?: string; name: string; path: string }): Promise<SettingsView>
+  removeKnowledgeBase(id: string): Promise<SettingsView>
   testServer(serverId: string): Promise<McpTestResult>
   upsertServer(server: McpServerConfig): Promise<SettingsView>
   removeServer(id: string): Promise<SettingsView>
@@ -43,6 +45,8 @@ export interface WorkbenchRuntime {
   upsertPrompt(prompt: PromptTemplate): Promise<SettingsView>
   removePrompt(id: string): Promise<SettingsView>
   activatePrompt(id: string): Promise<SettingsView>
+  /** V2.1: built-in domain prompt templates. */
+  promptTemplates(): PromptTemplate[]
 }
 
 /** Wire-level error with a stable code for the panel. */
@@ -89,9 +93,20 @@ export async function dispatch(runtime: WorkbenchRuntime, method: string, payloa
       return runtime.updateState(patch, revision)
     }
     case 'rag.rebuild':
-      return runtime.rebuildRag()
+      return runtime.rebuildRag(p['kbId'] === undefined ? undefined : str(p['kbId'], 'kbId'))
     case 'rag.search':
-      return runtime.searchRag(str(p['query'], 'query'), p['topK'] === undefined ? undefined : num(p['topK'], 'topK'))
+      return runtime.searchRag(
+        str(p['query'], 'query'),
+        p['topK'] === undefined ? undefined : num(p['topK'], 'topK'),
+        p['kbId'] === undefined ? undefined : str(p['kbId'], 'kbId'),
+      )
+    case 'kb.save': {
+      const kb = p['kb']
+      if (!isRecord(kb)) throw new WorkbenchApiError('bad-request', 'kb 必须是对象')
+      return runtime.upsertKnowledgeBase(kb as unknown as { id?: string; name: string; path: string })
+    }
+    case 'kb.remove':
+      return runtime.removeKnowledgeBase(str(p['id'], 'id'))
     case 'mcp.test':
       return runtime.testServer(str(p['serverId'], 'serverId'))
     case 'mcp.save': {
@@ -129,6 +144,8 @@ export async function dispatch(runtime: WorkbenchRuntime, method: string, payloa
       return runtime.removePrompt(str(p['id'], 'id'))
     case 'prompt.activate':
       return runtime.activatePrompt(str(p['id'], 'id'))
+    case 'prompt.templates':
+      return runtime.promptTemplates()
     default:
       throw new WorkbenchApiError('not-found', `未知方法 "${method}"`, 404)
   }

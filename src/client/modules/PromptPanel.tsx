@@ -33,7 +33,9 @@ export function PromptPanel(props: PanelProps) {
   const [note, setNote] = React.useState<string | null>(null)
 
   React.useEffect(() => {
-    if (draft && !prompts.some((p) => p.id === draft.id)) setDraft(null)
+    // 仅当 draft 是已保存模板(id 非空)且被删除时清空;
+    // 新建模板 id 为空字符串, 不能被这里误清(修复"点新建没反应")。
+    if (draft && draft.id && !prompts.some((p) => p.id === draft.id)) setDraft(null)
   }, [prompts, draft])
 
   async function save() {
@@ -63,12 +65,51 @@ export function PromptPanel(props: PanelProps) {
     setNote('已切换生效提示词 (下一个模型步骤生效)')
   }
 
+  async function restoreTemplates() {
+    setErr(null)
+    try {
+      const templates = await call<PromptTemplate[]>('prompt.templates', {})
+      for (const t of templates) await call('prompt.save', { prompt: t })
+      await refresh()
+      setNote('已恢复内置领域模板 (软件工程/代码审查/翻译/数据分析等)')
+    } catch (e) {
+      setErr(errorMessage(e))
+    }
+  }
+
+  // 最近使用过的 3 个提示词(按 lastUsedAt 倒序; 0 = 从未使用)。
+  const recent = [...prompts]
+    .filter((p) => (p.lastUsedAt ?? 0) > 0)
+    .sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0))
+    .slice(0, 3)
+
   const preview = draft ? substitute(draft.content, mergeVars(previewVars)) : ''
 
   return (
     <div>
+      {recent.length > 0 && (
+        <Section title="🕘 最近使用" right={<span style={styles.dim}>最近 3 个</span>}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {recent.map((p) => (
+              <button
+                key={p.id}
+                style={{ ...styles.button, flex: '1 1 180px', textAlign: 'left', background: p.id === activeId ? palette.accent : palette.panelAlt, color: p.id === activeId ? '#fff' : palette.text }}
+                onClick={() => void activate(p.id)}
+                title={p.content.slice(0, 80)}
+              >
+                <strong style={{ fontSize: 12 }}>{p.name}</strong>
+                {p.id === activeId && <span style={{ marginLeft: 6 }}>●</span>}
+                <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{new Date(p.lastUsedAt ?? 0).toLocaleTimeString()}</div>
+              </button>
+            ))}
+          </div>
+          <div style={{ ...styles.dim, marginTop: 6 }}>点击一键切换为生效提示词(计入最近使用)。</div>
+        </Section>
+      )}
+
       <Section title="提示词模板" right={
         <span style={{ display: 'inline-flex', gap: 8 }}>
+          <Button disabled={false} onClick={() => void restoreTemplates()}>恢复内置模板</Button>
           <Button variant="primary" onClick={() => setDraft({ id: '', name: '新模板', content: '你是{{role}}。主题: {{topic}}' })}>新建</Button>
         </span>
       }>

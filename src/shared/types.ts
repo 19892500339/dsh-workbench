@@ -71,6 +71,16 @@ export interface PromptTemplate {
   name: string
   /** Template body; {{var}} placeholders are substituted on preview. */
   content: string
+  /** V2.1: epoch ms of the last activation (drives the "recent" list). */
+  lastUsedAt?: number
+}
+
+/** V2.1: one knowledge base = one user-selected folder. */
+export interface KnowledgeBase {
+  id: string
+  name: string
+  /** Absolute path of the corpus folder. */
+  path: string
 }
 
 /** A registered tool, projected for display. */
@@ -124,6 +134,8 @@ export interface EmbeddingConfig {
 export interface WorkbenchState {
   rag: {
     corpusDir: string
+    /** V2.1: user-managed knowledge bases (folder → corpus). */
+    knowledgeBases: KnowledgeBase[]
     chunkSize: number
     chunkOverlap: number
     topK: number
