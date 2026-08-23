@@ -6,6 +6,7 @@ import React from 'react'
 import { call, errorMessage } from '../api.js'
 import { Section, Field, Button, Empty, ErrorNote, styles, okNote, palette } from '../ui.js'
 import { WorkflowGraph } from '../WorkflowGraph.js'
+import { ErrorBoundary } from '../ErrorBoundary.js'
 import type { StateSnapshot, WorkflowDefinition, WorkflowNode, WorkflowStepLog } from '../../shared/types.js'
 
 export interface PanelProps {
@@ -174,16 +175,18 @@ export function WorkflowPanel(props: PanelProps) {
               <div style={{ fontSize: 12, color: palette.dim, margin: '10px 0 6px' }}>
                 节点 ({draft.nodes.length}) — 用左侧面板添加节点, 画布内拖拽节点改变执行顺序(连线自动更新):
               </div>
-              <WorkflowGraph
-                nodes={draft.nodes}
-                selectedId={graphSelected}
-                onSelect={setGraphSelected}
-                onChange={(next) => { setDraft({ ...draft, nodes: next }); setGraphSelected(null) }}
-                onAddNode={(kind) => {
-                  setDraft({ ...draft, nodes: [...draft.nodes, newNodeOf(kind)] })
-                  setGraphSelected(null)
-                }}
-              />
+              <ErrorBoundary label="工作流画布">
+                <WorkflowGraph
+                  nodes={draft.nodes}
+                  selectedId={graphSelected}
+                  onSelect={setGraphSelected}
+                  onChange={(next) => { setDraft({ ...draft, nodes: next }); setGraphSelected(null) }}
+                  onAddNode={(kind) => {
+                    setDraft({ ...draft, nodes: [...draft.nodes, newNodeOf(kind)] })
+                    setGraphSelected(null)
+                  }}
+                />
+              </ErrorBoundary>
               {draft.nodes.length === 0 && <Empty text="还没有节点, 用左侧面板添加。" />}
             </>
           ) : (

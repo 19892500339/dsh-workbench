@@ -5,6 +5,7 @@
 import React from 'react'
 import { call, errorMessage } from './api.js'
 import { styles, palette } from './ui.js'
+import { ErrorBoundary } from './ErrorBoundary.js'
 import { RagPanel } from './modules/RagPanel.js'
 import { McpPanel } from './modules/McpPanel.js'
 import { WorkflowPanel } from './modules/WorkflowPanel.js'
@@ -76,12 +77,16 @@ export function WorkbenchView(props: { sessionId?: string }) {
         )}
         {loading && !snapshot && <div style={{ ...styles.dim, padding: 24 }}>加载中…</div>}
         {!loading && !snapshot && !error && <div style={{ ...styles.dim, padding: 24 }}>等待宿主数据…</div>}
-        {snapshot && active === 'rag' && <RagPanel snapshot={snapshot} refresh={refresh} />}
-        {snapshot && active === 'mcp' && <McpPanel snapshot={snapshot} refresh={refresh} />}
-        {snapshot && active === 'workflow' && <WorkflowPanel snapshot={snapshot} refresh={refresh} />}
-        {snapshot && active === 'skill' && <SkillPanel snapshot={snapshot} refresh={refresh} />}
-        {snapshot && active === 'tool' && <ToolPanel snapshot={snapshot} refresh={refresh} />}
-        {snapshot && active === 'prompt' && <PromptPanel snapshot={snapshot} refresh={refresh} />}
+        {snapshot && (
+          <ErrorBoundary label="工作台面板">
+            {active === 'rag' && <RagPanel snapshot={snapshot} refresh={refresh} />}
+            {active === 'mcp' && <McpPanel snapshot={snapshot} refresh={refresh} />}
+            {active === 'workflow' && <WorkflowPanel snapshot={snapshot} refresh={refresh} />}
+            {active === 'skill' && <SkillPanel snapshot={snapshot} refresh={refresh} />}
+            {active === 'tool' && <ToolPanel snapshot={snapshot} refresh={refresh} />}
+            {active === 'prompt' && <PromptPanel snapshot={snapshot} refresh={refresh} />}
+          </ErrorBoundary>
+        )}
       </div>
     </div>
   )
