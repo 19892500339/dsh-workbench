@@ -1,0 +1,7 @@
+# dsh-workbench bundle patch: one host row over the profile.
+# The row id must match the plugin's exported cordis `name` (src/index.ts).
+# Install with:
+#   dsh plugin --profile web add dsh-workbench
+- insert:
+    - id: workbench
+      name: dsh-workbench

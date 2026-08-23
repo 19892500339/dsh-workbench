@@ -1,0 +1,10 @@
+# The npm package ships only the built artifacts listed in package.json "files".
+# Everything below is excluded on top of that allow-list.
+src/
+tests/
+docs/
+tsdown.config.ts
+tsconfig.json
+tsconfig.build.json
+.gitignore
+.npmignore
