@@ -72,6 +72,26 @@ export const WorkbenchSchema = z.object({
             }),
           )
           .default([]),
+        // V4: script-mode workflow (DSH workflowEngine orchestration).
+        mode: z.string().default('nodes'),
+        script: z.string().default(''),
+        meta: z
+          .object({
+            name: z.string().default(''),
+            description: z.string().default(''),
+            whenToUse: z.string().default(''),
+            phases: z
+              .array(
+                z.object({
+                  title: z.string(),
+                  detail: z.string().default(''),
+                  provider: z.string().default(''),
+                  model: z.string().default(''),
+                }),
+              )
+              .default([]),
+          })
+          .default({ name: '', description: '', whenToUse: '', phases: [] }),
       }),
     )
     .default([]),

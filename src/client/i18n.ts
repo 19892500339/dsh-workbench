@@ -77,6 +77,18 @@ const zh: Dict = {
   wfSteps: '共 {n} 步', wfStatusOk: 'ok', wfStatusSkip: '跳过', wfStatusErr: '错误', wfDetail: '详情', wfSaved: '工作流已保存', wfRestored: '内置模板已恢复',
   wfNewName: '新工作流', wfParamTextPh: '提示词正文, 支持 {var} 占位符', wfParamTransformPh: '变换: append 文本 / prepend 文本 / replace 旧->新',
   wfParamToolPh: '工具名, 例如 read_document', wfParamOutputPh: '输出格式, 例如 markdown',
+  // V4: 双模式 + 真实执行
+  wfMode: '模式', wfModeNodes: '节点模式', wfModeScript: '脚本模式 (DSH workflowEngine)',
+  wfNodesHint: '节点按顺序执行; tool 节点真实调用、skill 节点载入技能正文。',
+  wfScriptHint: 'JS 编排脚本, 子代理扇出 —— 与模型侧 workflow 工具一致。',
+  wfScript: '编排脚本 (JS)', wfScriptPh: '顶层 await; 结尾 return <json>; 可用 agent() / pipeline() / parallel() / phase() / log() / args',
+  wfMetaName: '脚本名 (kebab-case)', wfMetaDesc: '脚本描述', wfMetaPhases: '阶段 (逗号分隔)', wfMetaPhasesPh: '例如: 调研, 实现, 验证',
+  wfScriptNote: '运行通过 DSH workflowEngine 在 worker 线程执行脚本, 以当前会话为父代理起子代理; 结果在完成后返回。',
+  wfRunScript: '脚本运行', wfRunScriptBtn: '运行脚本', wfRunScriptNote: '整个脚本完成后返回 (agentsStarted + 结果 JSON)。',
+  wfRealRun: '真实运行', wfRunNote: 'tool 节点真实调用 (以当前会话 agent 权限), skill 节点载入技能正文; 先保存再运行。',
+  wfAgents: '子代理', wfStopReason: '结束原因', wfStatusRun: '运行中…',
+  wfSelectTool: '选择工具…', wfSelectSkill: '选择技能…', wfArgsJson: '入参 JSON (可选), 如 {"path": "..."}',
+  wfParamSkillPh: '技能名 (运行时从技能列表载入正文)',
 
   // skills panel
   skInstalled: '已安装技能', skEmpty: '当前会话没有可展示的技能。', skImport: '从本地导入 SKILL.md',
@@ -159,6 +171,18 @@ const en: Dict = {
   wfSteps: '{n} steps', wfStatusOk: 'ok', wfStatusSkip: 'skipped', wfStatusErr: 'error', wfDetail: 'Detail', wfSaved: 'Workflow saved', wfRestored: 'Built-in templates restored',
   wfNewName: 'New workflow', wfParamTextPh: 'Prompt body, supports {var} placeholders', wfParamTransformPh: 'transform: append text / prepend text / replace old->new',
   wfParamToolPh: 'Tool name, e.g. read_document', wfParamOutputPh: 'Output format, e.g. markdown',
+  // V4: dual mode + real execution
+  wfMode: 'Mode', wfModeNodes: 'Node mode', wfModeScript: 'Script mode (DSH workflowEngine)',
+  wfNodesHint: 'Nodes run in order; tool nodes really call tools, skill nodes load the skill body.',
+  wfScriptHint: 'JS orchestration script, subagent fan-out — same as the model-facing workflow tool.',
+  wfScript: 'Orchestration script (JS)', wfScriptPh: 'top-level await; end with return <json>; hooks: agent() / pipeline() / parallel() / phase() / log() / args',
+  wfMetaName: 'Script name (kebab-case)', wfMetaDesc: 'Script description', wfMetaPhases: 'Phases (comma separated)', wfMetaPhasesPh: 'e.g. research, implement, verify',
+  wfScriptNote: 'Runs through the DSH workflowEngine on a worker thread, spawning subagents under the current session; returns when the whole script settles.',
+  wfRunScript: 'Script run', wfRunScriptBtn: 'Run script', wfRunScriptNote: 'Returns when the whole script finishes (agentsStarted + result JSON).',
+  wfRealRun: 'Real run', wfRunNote: 'tool nodes really call tools (as the current session agent), skill nodes load the skill body; save before running.',
+  wfAgents: 'Subagents', wfStopReason: 'Stop reason', wfStatusRun: 'running…',
+  wfSelectTool: 'Pick a tool…', wfSelectSkill: 'Pick a skill…', wfArgsJson: 'Args JSON (optional), e.g. {"path": "..."}',
+  wfParamSkillPh: 'Skill name (body loaded from the skill list at runtime)',
 
   skInstalled: 'Installed skills', skEmpty: 'No skills to show in this session.', skImport: 'Import a local SKILL.md',
   skPath: 'File path', skImportBtn: 'Import', skPathPh: 'e.g. C:\\path\\to\\SKILL.md',

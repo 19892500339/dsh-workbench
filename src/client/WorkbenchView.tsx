@@ -85,7 +85,7 @@ export function WorkbenchView(props: { sessionId?: string }) {
           <ErrorBoundary label="工作台面板">
             {active === 'rag' && <RagPanel snapshot={snapshot} refresh={refresh} />}
             {active === 'mcp' && <McpPanel snapshot={snapshot} refresh={refresh} />}
-            {active === 'workflow' && <WorkflowPanel snapshot={snapshot} refresh={refresh} />}
+            {active === 'workflow' && <WorkflowPanel snapshot={snapshot} refresh={refresh} sessionId={props.sessionId} />}
             {active === 'skill' && <SkillPanel snapshot={snapshot} refresh={refresh} />}
             {active === 'tool' && <ToolPanel snapshot={snapshot} refresh={refresh} />}
             {active === 'prompt' && <PromptPanel snapshot={snapshot} refresh={refresh} />}

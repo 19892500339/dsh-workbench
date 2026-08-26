@@ -35,6 +35,7 @@ const KIND_COLOR: Record<WorkflowNode['kind'], string> = {
   prompt: '#3f6fe0',
   transform: '#8a5fd8',
   tool: '#c8912f',
+  skill: '#2f9e9e',
   output: '#2f9457',
 }
 
@@ -42,6 +43,7 @@ const NODE_KINDS: Array<{ kind: WorkflowNode['kind']; label: string }> = [
   { kind: 'prompt', label: '+ 提示词' },
   { kind: 'transform', label: '+ 文本变换' },
   { kind: 'tool', label: '+ 工具' },
+  { kind: 'skill', label: '+ 技能' },
   { kind: 'output', label: '+ 输出' },
 ]
 

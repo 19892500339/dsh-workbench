@@ -14,6 +14,7 @@ import type {
   StateSnapshot,
   WorkbenchState,
   WorkflowDefinition,
+  WorkflowScriptResult,
   WorkflowStepLog,
 } from './shared/types.js'
 
@@ -46,7 +47,10 @@ export interface WorkbenchRuntime {
   toggleServer(id: string, enabled: boolean): Promise<SettingsView>
   upsertWorkflow(workflow: WorkflowDefinition): Promise<SettingsView>
   removeWorkflow(id: string): Promise<SettingsView>
-  runWorkflow(id: string, inputs: Record<string, string>): Promise<WorkflowStepLog[]>
+  /** V4: node-mode run; `sessionId` enables real execution against the agent's tools/skills scope. */
+  runWorkflow(id: string, inputs: Record<string, string>, sessionId?: string): Promise<WorkflowStepLog[]>
+  /** V4: script-mode run through the DSH workflowEngine (same engine as the `workflow` tool). */
+  runScript(id: string, inputs: Record<string, string>, sessionId?: string): Promise<WorkflowScriptResult>
   /** V3: mark the workflow the model should execute under the workflow mechanism. */
   activateWorkflow(id: string): Promise<SettingsView>
   /** The built-in starter templates (for restoring after deletion). */
@@ -153,7 +157,19 @@ export async function dispatch(runtime: WorkbenchRuntime, method: string, payloa
       return runtime.removeWorkflow(str(p['id'], 'id'))
     case 'workflow.run': {
       const inputs = isRecord(p['inputs']) ? p['inputs'] : {}
-      return runtime.runWorkflow(str(p['id'], 'id'), inputs as Record<string, string>)
+      return runtime.runWorkflow(
+        str(p['id'], 'id'),
+        inputs as Record<string, string>,
+        p['sessionId'] === undefined ? undefined : str(p['sessionId'], 'sessionId'),
+      )
+    }
+    case 'workflow.runScript': {
+      const inputs = isRecord(p['inputs']) ? p['inputs'] : {}
+      return runtime.runScript(
+        str(p['id'], 'id'),
+        inputs as Record<string, string>,
+        p['sessionId'] === undefined ? undefined : str(p['sessionId'], 'sessionId'),
+      )
     }
     case 'workflow.activate':
       return runtime.activateWorkflow(str(p['id'], 'id'))

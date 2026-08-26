@@ -37,15 +37,23 @@ export interface McpTestResult {
   error?: string
 }
 
-/** One workflow node. V1 kinds are deterministic, side-effect-free steps. */
+/** One workflow node. V4 adds `skill` (read a skill body) alongside the V1 kinds. */
 export interface WorkflowNode {
   id: string
   /** What this node does. */
-  kind: 'prompt' | 'transform' | 'tool' | 'output'
+  kind: 'prompt' | 'transform' | 'tool' | 'skill' | 'output'
   /** Short display label. */
   label: string
   /** Kind-specific parameters (JSON-friendly). */
   params: Record<string, string>
+}
+
+/** V4: workflow script metadata mirroring the DSH `workflow` tool's `meta` block. */
+export interface WorkflowScriptMeta {
+  name?: string
+  description?: string
+  whenToUse?: string
+  phases?: Array<{ title: string; detail?: string; provider?: string; model?: string }>
 }
 
 /** One workflow definition (persisted in settings). */
@@ -54,15 +62,30 @@ export interface WorkflowDefinition {
   name: string
   description: string
   nodes: WorkflowNode[]
+  /** V4: execution mode — `nodes` (visual node list, real execution) or `script` (DSH workflowEngine JS orchestration). */
+  mode?: 'nodes' | 'script'
+  /** V4: JS orchestration script body (mode = 'script'); mirrors the DSH `workflow` tool's `script` parameter. */
+  script?: string
+  /** V4: script identity block (mode = 'script'); mirrors the DSH `workflow` tool's `meta` parameter. */
+  meta?: WorkflowScriptMeta
 }
 
-/** One step of a dry-run execution trace. */
+/** One step of an execution trace (real execution since V4; dry-run in V1–V3). */
 export interface WorkflowStepLog {
   index: number
   nodeId: string
   label: string
-  status: 'ok' | 'skipped' | 'error'
+  status: 'ok' | 'skipped' | 'error' | 'running'
   detail: string
+}
+
+/** V4: result of a script-mode workflow run (via ctx.workflowEngine). */
+export interface WorkflowScriptResult {
+  runId?: string
+  agentsStarted?: number
+  value?: unknown
+  stopReason?: string
+  error?: string
 }
 
 /** One prompt template (persisted in settings). */

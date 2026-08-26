@@ -1,12 +1,19 @@
 /**
- * Workflow orchestration, V1: form-based node lists with a deterministic
- * dry-run runner.
+ * Workflow orchestration, V4: node-mode REAL execution + DSH workflowEngine
+ * script mode.
  *
- * Agreed scope: nodes are added/reordered/removed through the panel's forms
- * (no graph editor yet — that is a V2 candidate with @xyflow/react). "Run"
- * executes a dry-run trace: transform nodes really apply to a text buffer so
- * the user sees step-by-step logs, tool nodes resolve against the registry
- * without executing, and LLM-driven execution is a documented V2 extension.
+ * Node mode walks a deterministic node list, but since V4 it is no longer a
+ * dry run: `tool` nodes actually execute through the provided env (the agent's
+ * own tools instance), `skill` nodes load the skill body, and `prompt` /
+ * `transform` / `output` process a text buffer as before. When an env hook is
+ * absent the node degrades gracefully (tool = registry check, skill = name
+ * only), which keeps the old dry-run behaviour for hosts without the hooks.
+ *
+ * Script mode is delegated to `ctx.workflowEngine` by the host (see
+ * `runScriptWorkflow` in src/index.ts): the DSH engine executes model-written
+ * JS orchestration scripts on a worker thread, bridging `agent()` /
+ * `pipeline()` / `parallel()` back to the real subagent registry — exactly the
+ * DSH `workflow` tool.
  */
 import type { WorkflowDefinition, WorkflowNode, WorkflowStepLog } from './shared/types.js'
 
@@ -50,20 +57,37 @@ function node(id: string, kind: WorkflowNode['kind'], label: string, params: Rec
   return { id, kind, label, params }
 }
 
+/** Resolve a tool name to a short descriptor, or null. */
 export interface ToolResolver {
-  /** Resolve a tool name to a short descriptor, or null. */
   resolve(name: string): { name: string; description: string } | null
 }
 
+/** V4: real-execution hooks. Each is optional — absence degrades to dry-run. */
+export interface WorkflowExecEnv {
+  resolve?: (name: string) => { name: string; description: string } | null
+  /** Actually execute a tool node through the agent-scope tools instance. */
+  executeTool?: (name: string, args: Record<string, unknown>) => Promise<{ ok: boolean; value?: unknown; error?: string }>
+  /** Load a skill's full body through the agent-scope skills instance. */
+  getSkill?: (name: string) => Promise<{ name: string; description: string; body?: string } | undefined>
+}
+
+const MAX_DETAIL = 400
+const MAX_SKILL_BODY = 2000
+
+function clip(text: string, max = MAX_DETAIL): string {
+  const t = text.replace(/\s+/g, ' ').trim()
+  return t.length > max ? `${t.slice(0, max)}…` : t
+}
+
 /**
- * Execute a deterministic dry-run trace of one workflow.
- * @param resolver - registry accessor (null means tools are unresolved).
+ * Execute one workflow's node list in order. Returns the per-node trace; the
+ * final `output` node carries the accumulated buffer in its detail.
  */
-export function dryRunWorkflow(
+export async function executeWorkflow(
   workflow: WorkflowDefinition,
   inputs: Record<string, string>,
-  resolver: ToolResolver | null,
-): WorkflowStepLog[] {
+  env: WorkflowExecEnv,
+): Promise<WorkflowStepLog[]> {
   const logs: WorkflowStepLog[] = []
   let buffer = ''
   let index = 0
@@ -90,7 +114,7 @@ export function dryRunWorkflow(
             const search = n.params['search'] ?? ''
             if (!search) {
               buffer = value
-              entry.detail = `整体替换`
+              entry.detail = '整体替换'
             } else if (buffer.includes(search)) {
               buffer = buffer.split(search).join(value)
               entry.detail = `替换 "${search}"`
@@ -106,17 +130,62 @@ export function dryRunWorkflow(
         }
         case 'tool': {
           const name = n.params['name'] ?? ''
-          const resolved = resolver?.resolve(name) ?? null
+          const resolved = env.resolve ? env.resolve(name) : null
           if (resolved) {
-            entry.detail = `工具 "${name}" 已注册, 干运行不执行`
+            entry.detail = `工具 "${name}" 已注册`
           } else {
             entry.status = 'skipped'
-            entry.detail = `工具 "${name}" 未注册(干运行仅校验)`
+            entry.detail = `工具 "${name}" 未注册 (执行器仅校验)`
+            break
+          }
+          if (env.executeTool) {
+            entry.status = 'running'
+            let args: Record<string, unknown> = {}
+            const rawArgs = n.params['args'] ?? ''
+            if (rawArgs.trim()) {
+              try {
+                const parsed: unknown = JSON.parse(rawArgs)
+                if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                  args = parsed as Record<string, unknown>
+                } else {
+                  entry.status = 'error'
+                  entry.detail = `入参不是 JSON 对象: ${clip(rawArgs, 80)}`
+                  break
+                }
+              } catch {
+                entry.status = 'error'
+                entry.detail = `入参不是合法 JSON: ${clip(rawArgs, 80)}`
+                break
+              }
+            }
+            const result = await env.executeTool(name, args)
+            if (result.ok) {
+              const value = typeof result.value === 'string' ? result.value : JSON.stringify(result.value)
+              buffer += `\n\n[工具 ${name} 结果]\n${clip(value ?? '')}`
+              entry.status = 'ok'
+              entry.detail = `已调用 ${name} → ${clip(value ?? '(空结果)', 240)}`
+            } else {
+              entry.status = 'error'
+              entry.detail = `调用失败: ${result.error ?? '未知错误'}`
+            }
+          }
+          break
+        }
+        case 'skill': {
+          const name = n.params['name'] ?? ''
+          const skill = env.getSkill ? await env.getSkill(name) : undefined
+          if (skill) {
+            const body = (skill.body ?? '').slice(0, MAX_SKILL_BODY)
+            buffer += `\n\n[技能 ${skill.name}]\n${skill.description}\n${body}`
+            entry.detail = `已载入技能 "${skill.name}"${body ? ` (${body.length} 字符)` : ' (无正文)'}`
+          } else {
+            entry.status = 'skipped'
+            entry.detail = `技能 "${name}" 未找到 (执行器仅校验)`
           }
           break
         }
         case 'output': {
-          entry.detail = `输出 ${buffer.length} 字符 (${n.params['format'] ?? 'text'})`
+          entry.detail = `输出 ${buffer.length} 字符 (${n.params['format'] ?? 'text'}) — ${clip(buffer, 200)}`
           break
         }
       }
@@ -127,6 +196,20 @@ export function dryRunWorkflow(
     logs.push(entry)
   }
   return logs
+}
+
+/**
+ * Backwards-compatible dry run: execute the node list with no real hooks.
+ * Kept for callers that only want structure validation.
+ */
+export function dryRunWorkflow(
+  workflow: WorkflowDefinition,
+  inputs: Record<string, string>,
+  resolver: ToolResolver | null,
+): Promise<WorkflowStepLog[]> {
+  return executeWorkflow(workflow, inputs, {
+    resolve: (name) => resolver?.resolve(name) ?? null,
+  })
 }
 
 /** Replace {{key}} placeholders with provided inputs (missing keys stay). */

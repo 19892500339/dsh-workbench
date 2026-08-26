@@ -27,7 +27,7 @@ import { extractDocumentText } from './documents.js'
 import { testMcpServer, makeServerId, connectMcpServer } from './mcp.js'
 import { embedTexts, buildVectorIndex, searchVectors, fuseRrf, isEmbeddingConfigured } from './embedding.js'
 import type { VectorIndex } from './embedding.js'
-import { dryRunWorkflow, builtinTemplates } from './workflow.js'
+import { executeWorkflow, builtinTemplates } from './workflow.js'
 import { builtinPromptTemplates, safePromptText } from './prompts.js'
 import { registerApiRoutes, WorkbenchApiError } from './api.js'
 import type { SettingsView, WorkbenchRuntime } from './api.js'
@@ -43,6 +43,7 @@ import type {
   ToolView,
   WorkbenchState,
   WorkflowDefinition,
+  WorkflowScriptResult,
   WorkflowStepLog,
 } from './shared/types.js'
 
@@ -71,7 +72,7 @@ interface ToolsServiceLike {
   register(definition: unknown): () => void
   get(name: string, scope?: unknown): ToolSchema | undefined
   schemas(scope?: unknown): ToolSchema[]
-  execute(input: { callId: CallId; name: string; arguments: unknown; signal: AbortSignal }): Promise<unknown>
+  execute(input: { callId: CallId; name: string; arguments: unknown; signal: AbortSignal; agent?: unknown }): Promise<unknown>
   restrict(restriction: { deny?: string[]; allow?: string[] }): () => void
 }
 interface SettingsServiceLike {
@@ -84,6 +85,23 @@ interface WebServerLike {
 }
 interface SkillsServiceLike {
   list(options?: unknown): Promise<SkillSummary[]>
+  get?(name: string, options?: unknown): Promise<{ name: string; description: string; body?: string } | undefined>
+}
+
+/** Minimal face of the DSH workflowEngine service (`@deepseek-ai/dsh-workflow`). */
+interface WorkflowEngineLike {
+  start(request: {
+    script: string
+    meta: { name: string; description: string; whenToUse?: string; phases?: Array<{ title: string; detail?: string; provider?: string; model?: string }> }
+    args?: Record<string, string>
+    parent?: unknown
+    signal?: AbortSignal
+  }): {
+    id: string
+    result: Promise<{ stopReason: string; agentsStarted: number; value?: unknown; error?: string }>
+    cancel(reason: string): void
+    dispose(): Promise<void>
+  }
 }
 interface SystemPromptLike {
   section(section: unknown): () => void
@@ -105,6 +123,7 @@ interface CtxLike {
   systemPrompt: SystemPromptLike
   skills: SkillsServiceLike
   agents: AgentsServiceLike
+  get(name: string): unknown
   effect(fn: () => void, label?: string): void
 }
 
@@ -614,16 +633,96 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     const state = viewOf().value
     return updateState({ workflows: state.workflows.filter((w) => w.id !== id) })
   }
-  async function runWorkflow(id: string, inputs: Record<string, string>): Promise<WorkflowStepLog[]> {
+  /**
+   * V4: run one workflow. Node mode walks the node list with REAL execution:
+   * `tool` nodes call the agent's own tools instance (same scope as the
+   * session's model), `skill` nodes load the skill body. `sessionId` selects
+   * the live agent so the agent-scope registries are used. Without an agent the
+   * old dry-run (registry check only) applies.
+   */
+  async function runWorkflow(id: string, inputs: Record<string, string>, sessionId?: string): Promise<WorkflowStepLog[]> {
     const state = viewOf().value
     const workflow = state.workflows.find((w) => w.id === id)
     if (!workflow) throw new WorkbenchApiError('not-found', `工作流 "${id}" 不存在`, 404)
-    return dryRunWorkflow(workflow, inputs, {
+    const agent = sessionId === undefined ? undefined : ctx.agents.get(sessionId)
+    const toolsSvc = serviceFromAgent(agent, 'tools', tools)
+    const skillsSvc = serviceFromAgent(agent, 'skills', ctx.skills)
+    return executeWorkflow(workflow, inputs, {
       resolve: (toolName) => {
-        const def = tools.get(toolName)
+        const def = toolsSvc.get(toolName, agent ?? undefined)
         return def ? { name: def.name, description: def.description } : null
       },
+      executeTool: async (name, args) => {
+        if (agent === undefined) return { ok: false, error: '真实执行需要活跃会话 (sessionId)' }
+        const def = toolsSvc.get(name, agent)
+        if (!def) return { ok: false, error: `工具 "${name}" 未注册` }
+        try {
+          const result = await toolsSvc.execute({
+            callId: `workbench-wf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}` as unknown as CallId,
+            name,
+            arguments: args ?? {},
+            agent,
+            signal: new AbortController().signal,
+          })
+          return { ok: true, value: projectResult(result) }
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) }
+        }
+      },
+      getSkill: async (name) => {
+        if (agent === undefined || typeof skillsSvc.get !== 'function') return undefined
+        try {
+          const skill = await skillsSvc.get(name, { scope: agent })
+          if (!skill) return undefined
+          return { name: skill.name, description: skill.description, body: skill.body }
+        } catch {
+          return undefined
+        }
+      },
     })
+  }
+  /**
+   * V4: run one workflow in SCRIPT mode — delegates to the DSH workflowEngine
+   * (the same engine behind the model-facing `workflow` tool): the JS
+   * orchestration script runs on a worker thread and fans out real subagents
+   * via agent()/pipeline()/parallel(). Resolves when the whole script settles.
+   */
+  async function runScriptWorkflow(id: string, inputs: Record<string, string>, sessionId?: string): Promise<WorkflowScriptResult> {
+    const state = viewOf().value
+    const workflow = state.workflows.find((w) => w.id === id)
+    if (!workflow) throw new WorkbenchApiError('not-found', `工作流 "${id}" 不存在`, 404)
+    const script = workflow.script ?? ''
+    if (!script.trim()) throw new WorkbenchApiError('bad-request', '脚本工作流缺少 script 正文')
+    const agent = sessionId === undefined ? undefined : ctx.agents.get(sessionId)
+    const engine = serviceFromAgent(agent, 'workflowEngine', ctx.get('workflowEngine') as WorkflowEngineLike | undefined)
+    if (!engine || typeof engine.start !== 'function') {
+      throw new WorkbenchApiError('unavailable', 'workflowEngine 服务不可用 (当前预设未挂载工作流引擎)', 503)
+    }
+    const meta = workflow.meta ?? { name: workflow.name, description: workflow.description }
+    const run = engine.start({
+      script,
+      meta: {
+        name: meta.name || workflow.name,
+        description: meta.description || workflow.description,
+        ...(meta.whenToUse ? { whenToUse: meta.whenToUse } : {}),
+        ...(meta.phases && meta.phases.length > 0 ? { phases: meta.phases } : {}),
+      },
+      ...(Object.keys(inputs).length > 0 ? { args: inputs } : {}),
+      ...(agent !== undefined ? { parent: agent } : {}),
+      signal: new AbortController().signal,
+    })
+    try {
+      const result = await run.result
+      return {
+        runId: run.id,
+        agentsStarted: result.agentsStarted,
+        value: result.value,
+        stopReason: result.stopReason,
+        ...(result.error ? { error: result.error } : {}),
+      }
+    } finally {
+      await run.dispose().catch(() => undefined)
+    }
   }
   async function activateWorkflow(id: string): Promise<SettingsView> {
     return updateState({ activeWorkflowId: id })
@@ -772,6 +871,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     upsertWorkflow,
     removeWorkflow,
     runWorkflow,
+    runScript: (id: string, inputs: Record<string, string>, sessionId?: string) => runScriptWorkflow(id, inputs, sessionId),
     activateWorkflow,
     setOverride,
     resetAllOverrides,
