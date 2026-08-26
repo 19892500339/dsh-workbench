@@ -51,7 +51,7 @@ import type {
 export const name = 'workbench'
 
 /** Hard service dependencies. */
-export const inject = ['tools', 'webServer', 'settings', 'systemPrompt', 'skills', 'agents']
+export const inject = ['tools', 'webServer', 'settings', 'systemPrompt', 'skills', 'agents', 'agentPresets']
 
 /** Optional patch-level defaults (see cordis.patch.yml `config`). */
 export const Config = z.object({
@@ -116,6 +116,10 @@ interface AgentLike {
 interface AgentsServiceLike {
   get(id: string): AgentLike | undefined
 }
+interface AgentPresetsServiceLike {
+  /** Read one agent's realm-provided service (e.g. workflowEngine lives behind an isolate realm). */
+  serviceFor(agent: { ctx: unknown }, name: string): unknown
+}
 interface CtxLike {
   tools: ToolsServiceLike
   webServer: WebServerLike
@@ -123,6 +127,7 @@ interface CtxLike {
   systemPrompt: SystemPromptLike
   skills: SkillsServiceLike
   agents: AgentsServiceLike
+  agentPresets: AgentPresetsServiceLike
   get(name: string): unknown
   effect(fn: () => void, label?: string): void
 }
@@ -694,7 +699,13 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     const script = workflow.script ?? ''
     if (!script.trim()) throw new WorkbenchApiError('bad-request', '脚本工作流缺少 script 正文')
     const agent = sessionId === undefined ? undefined : ctx.agents.get(sessionId)
-    const engine = serviceFromAgent(agent, 'workflowEngine', ctx.get('workflowEngine') as WorkflowEngineLike | undefined)
+    // workflowEngine lives behind the preset's `isolate: { workflowEngine }` realm,
+    // so it is invisible to host ctx.get() AND agent.ctx.get(); agentPresets.
+    // serviceFor() is the documented way a host reader holding the agent reads it.
+    const engine =
+      (agent !== undefined
+        ? (ctx.agentPresets.serviceFor(agent, 'workflowEngine') as WorkflowEngineLike | undefined)
+        : undefined) ?? (ctx.get('workflowEngine') as WorkflowEngineLike | undefined)
     if (!engine || typeof engine.start !== 'function') {
       throw new WorkbenchApiError('unavailable', 'workflowEngine 服务不可用 (当前预设未挂载工作流引擎)', 503)
     }
