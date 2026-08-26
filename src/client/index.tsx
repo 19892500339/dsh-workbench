@@ -9,8 +9,8 @@ import { PromptQuickBar } from './PromptQuickBar.js'
 import { MechanismBar } from './MechanismBar.js'
 import { syncWithDshLocale, t } from './i18n.js'
 
-/** Hard dependency: the slot registry must be ready before we register. */
-export const inject = ['slots'] as const
+/** Hard dependencies: slot registry + locale service must be ready before we register. */
+export const inject = ['slots', 'locale'] as const
 
 interface SlotsServiceLike {
   inject(key: string, callback: () => unknown): () => void

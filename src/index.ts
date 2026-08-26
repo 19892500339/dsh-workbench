@@ -50,7 +50,7 @@ import type {
 export const name = 'workbench'
 
 /** Hard service dependencies. */
-export const inject = ['tools', 'webServer', 'settings', 'systemPrompt', 'skills']
+export const inject = ['tools', 'webServer', 'settings', 'systemPrompt', 'skills', 'agents']
 
 /** Optional patch-level defaults (see cordis.patch.yml `config`). */
 export const Config = z.object({
@@ -89,13 +89,42 @@ interface SystemPromptLike {
   section(section: unknown): () => void
   variable(name: string, provider: () => string | undefined): () => void
 }
+
+/** A live agent: its scope context resolves the agent's own tools/skills instances. */
+interface AgentLike {
+  id: string
+  ctx: { get(name: string): unknown }
+}
+interface AgentsServiceLike {
+  get(id: string): AgentLike | undefined
+}
 interface CtxLike {
   tools: ToolsServiceLike
   webServer: WebServerLike
   settings: SettingsServiceLike
   systemPrompt: SystemPromptLike
   skills: SkillsServiceLike
+  agents: AgentsServiceLike
   effect(fn: () => void, label?: string): void
+}
+
+/**
+ * Resolve the tools/skills services as the agent's scope sees them.
+ *
+ * DSH's tools/skills services are per-scope: rows mounted by an agent preset
+ * (the model-facing tool plugins, skill providers) register into the agent's
+ * scope instance, which a host-plane reader like this workbench does NOT see
+ * through its own `ctx.tools`/`ctx.skills` (that resolves the host instance,
+ * whose global layer only carries host-registered tools such as
+ * `workbench_search`). Reading `agent.ctx.get(...)` walks the agent's own
+ * context chain and returns the instance whose layers hold the preset's
+ * registrations, so `schemas(agent)` / `list({ scope: agent })` then return
+ * exactly the tools and skills that agent's model sees.
+ */
+function serviceFromAgent<T>(agent: AgentLike | undefined, name: string, fallback: T): T {
+  if (agent === undefined) return fallback
+  const resolved = agent.ctx.get(name)
+  return (resolved as T | undefined) ?? fallback
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -498,8 +527,13 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
   )
 
   // --- projections ----------------------------------------------------------
-  async function listSkills(): Promise<SkillView[]> {
-    const summaries = await ctx.skills.list().catch(() => [] as SkillSummary[])
+  /**
+   * Project the skill catalog as one scope sees it. `agentScope` is the live
+   * agent (viewed through the agent's own skills instance); when absent, the
+   * host skills instance's global view is used.
+   */
+  async function listSkills(agentScope: unknown, svc: SkillsServiceLike): Promise<SkillView[]> {
+    const summaries = await svc.list({ scope: agentScope }).catch(() => [] as SkillSummary[])
     return summaries.map((s) => ({
       name: s.name,
       description: s.description,
@@ -509,12 +543,14 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
   }
 
   /**
-   * List EVERY registered tool: visible ones from the registry plus the ones
-   * this workbench has hidden via restrict (they read as absent from the
-   * registry, so they are re-attached here with a hidden marker so the panel
-   * can still show and restore them).
+   * List EVERY registered tool as one scope sees them: visible ones from the
+   * registry plus the ones this workbench has hidden via restrict (they read
+   * as absent from the registry, so they are re-attached here with a hidden
+   * marker so the panel can still show and restore them). `agentScope` is the
+   * live agent (viewed through the agent's own tools instance); when absent,
+   * the host tools instance's global view is used.
    */
-  function listTools(): ToolView[] {
+  function listTools(agentScope: unknown, svc: ToolsServiceLike): ToolView[] {
     const state = viewOf().value
     // 「对模型隐藏」仅在「工具」机制开关 = workbench 时生效; 默认(default)
     // 模式下全部工具可见, 不标注隐藏。
@@ -526,7 +562,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
             .map(([name]) => name)
         : [],
     )
-    const visible: ToolView[] = tools.schemas().map((t) => ({
+    const visible: ToolView[] = svc.schemas(agentScope ?? undefined).map((t) => ({
       name: t.name,
       description: t.description,
       parameters: t.parameters,
@@ -698,8 +734,18 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
 
   // --- the runtime consumed by the RPC layer --------------------------------
   const runtime: WorkbenchRuntime = {
-    async state(): Promise<StateSnapshot> {
+    /**
+     * Snapshot for the browser panel. `sessionId` (when the panel knows it)
+     * lets the projection resolve the LIVE agent's own tools/skills instances,
+     * so the 「工具」「技能」 modules show exactly what that session's model
+     * sees — not just the host-plane global registrations. Without an agent
+     * (cold/blank session) the global view is used.
+     */
+    async state(sessionId?: string): Promise<StateSnapshot> {
       const view = viewOf()
+      const agent = sessionId === undefined ? undefined : ctx.agents.get(sessionId)
+      const toolsSvc = serviceFromAgent(agent, 'tools', tools)
+      const skillsSvc = serviceFromAgent(agent, 'skills', ctx.skills)
       const mcpStatus: Record<string, McpConnectionStatus> = {}
       for (const [id, conn] of mcpConnections) {
         mcpStatus[id] = { connected: conn.connected, tools: conn.tools, error: conn.error }
@@ -707,8 +753,8 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
       return {
         value: view.value,
         revision: view.revision,
-        skills: await listSkills(),
-        tools: listTools(),
+        skills: await listSkills(agent ?? undefined, skillsSvc),
+        tools: listTools(agent ?? undefined, toolsSvc),
         rag: ragCaches.get(defaultKbId) ? { ...ragCaches.get(defaultKbId)!.info } : null,
         mcpStatus,
       }

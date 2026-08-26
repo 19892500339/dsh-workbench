@@ -36,7 +36,9 @@ export function WorkbenchView(props: { sessionId?: string }) {
   const refresh = React.useCallback(async () => {
     setLoading(true)
     try {
-      const next = await call<StateSnapshot>('state.get', {})
+      // 带上 sessionId: 宿主按该会话 agent 的 scope 投影工具/技能, 面板才能
+      // 显示模型真实可见的工具与技能(而非宿主全局层的那几个)。
+      const next = await call<StateSnapshot>('state.get', props.sessionId ? { sessionId: props.sessionId } : {})
       setSnapshot(next)
       setError(null)
     } catch (e) {
@@ -44,7 +46,7 @@ export function WorkbenchView(props: { sessionId?: string }) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [props.sessionId])
 
   React.useEffect(() => {
     void refresh()

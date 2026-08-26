@@ -25,7 +25,8 @@ export interface SettingsView {
 
 /** Everything the handlers need — implemented by the plugin entry. */
 export interface WorkbenchRuntime {
-  state(): Promise<StateSnapshot>
+  /** `sessionId` lets the projection resolve the live agent's own tools/skills scope. */
+  state(sessionId?: string): Promise<StateSnapshot>
   updateState(patch: object, expectedRevision?: number): Promise<SettingsView>
   rebuildRag(kbId?: string): Promise<RagIndexInfo>
   searchRag(query: string, topK?: number, kbId?: string): Promise<SearchHit[]>
@@ -101,7 +102,7 @@ export async function dispatch(runtime: WorkbenchRuntime, method: string, payloa
   const p = isRecord(payload) ? payload : {}
   switch (method) {
     case 'state.get':
-      return runtime.state()
+      return runtime.state(p['sessionId'] === undefined ? undefined : str(p['sessionId'], 'sessionId'))
     case 'state.update': {
       const patch = p['patch']
       if (!isRecord(patch)) throw new WorkbenchApiError('bad-request', 'patch 必须是对象')
