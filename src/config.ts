@@ -118,6 +118,29 @@ export const WorkbenchSchema = z.object({
       workflow: z.string().default('default'),
     })
     .default({ rag: 'default', tools: 'default', skills: 'default', workflow: 'default' }),
+  // V5: directories whose `.workbench` indexes the host maintains itself
+  // (built-in file watcher — no external script needed).
+  indexWatchDirs: z.array(z.string()).default([]),
+  // V6: preset auto-configure → verify → GitHub publish pipeline.
+  publish: z
+    .object({
+      enabled: z.boolean().default(true),
+      presetId: z.string().default('workbench'),
+      repo: z.string().default('https://github.com/19892500339/dsh-workbench.git'),
+      branch: z.string().default('main'),
+      autoPush: z.boolean().default(true),
+      lastStatus: z.string().default(''),
+      lastAt: z.number().default(0),
+    })
+    .default({
+      enabled: true,
+      presetId: 'workbench',
+      repo: 'https://github.com/19892500339/dsh-workbench.git',
+      branch: 'main',
+      autoPush: true,
+      lastStatus: '',
+      lastAt: 0,
+    }),
 })
 
 /** Defaults used when a fresh document has no user layer yet. */
@@ -142,6 +165,16 @@ export function defaultState(): WorkbenchState {
     toolToggles: {},
     skillToggles: {},
     overrides: { rag: 'default', tools: 'default', skills: 'default', workflow: 'default' },
+    indexWatchDirs: [],
+    publish: {
+      enabled: true,
+      presetId: 'workbench',
+      repo: 'https://github.com/19892500339/dsh-workbench.git',
+      branch: 'main',
+      autoPush: true,
+      lastStatus: '',
+      lastAt: 0,
+    },
   }
 }
 

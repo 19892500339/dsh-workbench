@@ -77,22 +77,38 @@ export function chunkText(text: string, size: number, overlap: number): string[]
   return chunks.length > 0 ? chunks : ['']
 }
 
-/** Walk a directory tree for text corpus files (.md / .txt). */
-export async function listCorpusFiles(corpusDir: string): Promise<string[]> {
+/**
+ * Walk a directory tree for text corpus files (.md / .txt).
+ *
+ * `opts.includeWorkbenchLatest` additionally indexes each `.workbench/latest.md`
+ * (the plugin's own per-directory code index pointer) while still skipping the
+ * timestamped history snapshots, so code-index retrieval works through the
+ * regular `workbench_search` path without bloating the index with history.
+ */
+export async function listCorpusFiles(
+  corpusDir: string,
+  opts?: { includeWorkbenchLatest?: boolean },
+): Promise<string[]> {
+  const includeWorkbench = opts?.includeWorkbenchLatest === true
   const out: string[] = []
-  async function walk(dir: string): Promise<void> {
+  async function walk(dir: string, inWorkbench: boolean): Promise<void> {
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
     for (const entry of entries) {
       const full = join(dir, entry.name)
       if (entry.isDirectory()) {
+        if (entry.name === '.workbench') {
+          if (includeWorkbench) await walk(full, true)
+          continue
+        }
         if (entry.name.startsWith('.')) continue
-        await walk(full)
+        await walk(full, inWorkbench)
       } else if (/\.(md|txt)$/i.test(entry.name)) {
+        if (inWorkbench && entry.name !== 'latest.md') continue
         out.push(full)
       }
     }
   }
-  await walk(corpusDir)
+  await walk(corpusDir, false)
   return out.sort()
 }
 
@@ -101,8 +117,9 @@ export async function buildCorpusIndex(
   corpusDir: string,
   chunkSize: number,
   overlap: number,
+  opts?: { includeWorkbenchLatest?: boolean },
 ): Promise<CorpusIndex> {
-  const files = await listCorpusFiles(corpusDir)
+  const files = await listCorpusFiles(corpusDir, opts)
   const docs: IndexedDoc[] = []
   const postings = new Map<string, Map<number, number>>()
   const df = new Map<string, number>()
@@ -202,8 +219,8 @@ export function searchIndex(index: CorpusIndex, query: string, topK: number): Se
 }
 
 /** Signature of a corpus (dir + per-file mtime) used for cache invalidation. */
-export async function corpusSignature(corpusDir: string): Promise<string> {
-  const files = await listCorpusFiles(corpusDir)
+export async function corpusSignature(corpusDir: string, opts?: { includeWorkbenchLatest?: boolean }): Promise<string> {
+  const files = await listCorpusFiles(corpusDir, opts)
   let sig = ''
   for (const file of files.slice(0, 200)) {
     const info = await stat(file).catch(() => null)

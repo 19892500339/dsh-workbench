@@ -14,15 +14,18 @@
  *   (ctx.tools.restrict).
  */
 import { homedir } from 'node:os'
-import { join, basename } from 'node:path'
+import { join, basename, resolve } from 'node:path'
 import { mkdir, copyFile, stat, writeFile } from 'node:fs/promises'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-tools'
 import type { CallId, ToolSchema } from '@deepseek-ai/dsh-llm'
 import type { SkillSummary } from '@deepseek-ai/dsh-skill'
 import { SETTINGS_NS, WorkbenchSchema, defaultState } from './config.js'
-import { bm25Engine, corpusSignature, chunkText } from './search.js'
+import { bm25Engine, corpusSignature, chunkText, buildCorpusIndex } from './search.js'
 import type { CorpusIndex } from './search.js'
+import { scanDirectory, commitIndex, locateInIndexes, refreshIndex, codeDirSignature } from './codeindex.js'
+import type { CodeBlock } from './codeindex.js'
 import { extractDocumentText } from './documents.js'
 import { testMcpServer, makeServerId, connectMcpServer } from './mcp.js'
 import { embedTexts, buildVectorIndex, searchVectors, fuseRrf, isEmbeddingConfigured } from './embedding.js'
@@ -31,6 +34,7 @@ import { executeWorkflow, builtinTemplates } from './workflow.js'
 import { builtinPromptTemplates, safePromptText } from './prompts.js'
 import { registerApiRoutes, WorkbenchApiError } from './api.js'
 import type { SettingsView, WorkbenchRuntime } from './api.js'
+import { runPublishPipeline } from './publish.js'
 import type {
   McpConnectionStatus,
   McpServerConfig,
@@ -43,6 +47,7 @@ import type {
   ToolView,
   WorkbenchState,
   WorkflowDefinition,
+  WorkflowProgress,
   WorkflowScriptResult,
   WorkflowStepLog,
 } from './shared/types.js'
@@ -119,6 +124,8 @@ interface AgentsServiceLike {
 interface AgentPresetsServiceLike {
   /** Read one agent's realm-provided service (e.g. workflowEngine lives behind an isolate realm). */
   serviceFor(agent: { ctx: unknown }, name: string): unknown
+  /** V6: mount-validate one preset id (the roster's real composition check). */
+  standingKeyFor?(id?: string): Promise<unknown>
 }
 interface CtxLike {
   tools: ToolsServiceLike
@@ -130,6 +137,8 @@ interface CtxLike {
   agentPresets: AgentPresetsServiceLike
   get(name: string): unknown
   effect(fn: () => void, label?: string): void
+  /** Cordis event bus — used to project workflow/* engine events into run progress. */
+  on?(event: string, handler: (...args: unknown[]) => void): () => void
 }
 
 /**
@@ -172,7 +181,58 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
   const updateState = async (patch: object, expectedRevision?: number): Promise<SettingsView> => {
     await ctx.settings.update(SETTINGS_NS, patch, expectedRevision)
     await syncOverrides()
+    restartIndexWatch()
     return viewOf()
+  }
+
+  // --- V5: built-in .workbench index watcher -----------------------------------
+  // Maintains the configured directories' `.workbench` indexes inside the host:
+  // polls each dir's lightweight signature and refreshes on change, so line
+  // numbers always match the current code — no external script and no model
+  // needing to remember to commit. Reconfigured on every settings update.
+  const INDEX_WATCH_INTERVAL_MS = 2000
+  const INDEX_WATCH_SNAPSHOT_MS = 60_000
+
+  let indexWatchDispose: (() => void) | null = null
+
+  function restartIndexWatch(): void {
+    if (indexWatchDispose) {
+      indexWatchDispose()
+      indexWatchDispose = null
+    }
+    const dirs = viewOf().value.indexWatchDirs.map((d) => d.trim()).filter((d) => d.length > 0)
+    if (dirs.length === 0) return
+    const signatures = new Map<string, string>()
+    for (const dir of dirs) {
+      const abs = resolve(dir)
+      void codeDirSignature(abs)
+        .then((sig) => signatures.set(abs, sig))
+        .catch(() => undefined)
+    }
+    const timer = setInterval(() => {
+      for (const dir of dirs) {
+        const abs = resolve(dir)
+        void (async () => {
+          const sig = await codeDirSignature(abs).catch(() => null)
+          if (sig === null || sig === signatures.get(abs)) return
+          signatures.set(abs, sig)
+          const res = await refreshIndex(abs, {
+            note: '宿主内置 watch 自动同步',
+            snapshotThrottleMs: INDEX_WATCH_SNAPSHOT_MS,
+          }).catch(() => null)
+          if (res) {
+            const added = res.dirs.reduce((a, d) => a + d.added, 0)
+            const updated = res.dirs.reduce((a, d) => a + d.updated, 0)
+            console.log(`[dsh-workbench] 索引已自动同步 ${abs}: ${res.total_blocks} 块 (新增 ${added} / 更新 ${updated})`)
+          }
+        })()
+      }
+    }, INDEX_WATCH_INTERVAL_MS)
+    indexWatchDispose = () => {
+      clearInterval(timer)
+      signatures.clear()
+    }
+    console.log(`[dsh-workbench] 内置索引 watch 已启动: ${dirs.join(', ')}`)
   }
 
   // --- V3: mechanism overrides (default = DSH original behavior) -------------
@@ -326,8 +386,12 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     await mkdir(corpusDir, { recursive: true })
     const started = Date.now()
     try {
-      const index = await bm25Engine.rebuild(corpusDir, state.rag.chunkSize, state.rag.chunkOverlap)
-      const sig = await corpusSignature(corpusDir)
+      // includeWorkbenchLatest: also index every `.workbench/latest.md` under
+      // the corpus so code-index entries are retrievable via workbench_search.
+      const index = await buildCorpusIndex(corpusDir, state.rag.chunkSize, state.rag.chunkOverlap, {
+        includeWorkbenchLatest: true,
+      })
+      const sig = await corpusSignature(corpusDir, { includeWorkbenchLatest: true })
       let vindex: VectorIndex | undefined
       let vectorCount: number | undefined
       let embeddingModel: string | undefined
@@ -376,7 +440,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     if (cached === undefined || cached.info.corpusDir !== corpusDir) {
       await rebuildRag(kbId)
     } else {
-      const sig = await corpusSignature(corpusDir)
+      const sig = await corpusSignature(corpusDir, { includeWorkbenchLatest: true })
       if (sig !== cached.sig) await rebuildRag(kbId)
     }
     return ragCaches.get(key) ?? null
@@ -521,12 +585,156 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     console.error('[dsh-workbench] workbench_search 注册失败(与其它插件重名?):', error)
   }
 
+  // --- V4.2: .workbench code index tools -------------------------------------
+  // workbench_code_index keeps the per-directory `.workbench` index fresh:
+  // `scan` returns the structural outline (blocks with line ranges) so the
+  // model can annotate without re-reading files, then `commit` merges the
+  // annotations and writes `<dir>/.workbench/<timestamp>.md` + `latest.md`.
+  // workbench_code_locate searches those indexes and returns exact line
+  // ranges, so later sessions jump straight to the code.
+  try {
+    ctx.effect(() =>
+      tools.register(
+        defineTool({
+          name: 'workbench_code_index',
+          description:
+            '维护目录的 .workbench 代码索引(功能块 → 文件+起始/结束行)。每次生成或修改代码后调用: 先用 action=scan 查看该目录的功能块结构(无需读整文件), 再调用 action=commit 提交每个功能块的功能注释, 工具会为目录下每个含代码的子目录分别写入 .workbench/<时间戳>.md 快照与 latest.md。',
+          parameters: {
+            action: {
+              type: 'string',
+              enum: ['scan', 'commit'],
+              required: true,
+              description: 'scan=扫描目录返回功能块结构(供你注释); commit=合并功能注释并写入 .workbench 索引',
+            },
+            dir: { type: 'string', required: true, description: '要索引的代码目录(绝对路径)' },
+            max_blocks: { type: 'number', description: 'scan 时最多返回的功能块数, 默认 500' },
+            note: { type: 'string', description: 'commit 时本次变更说明(写入快照的「本次变更」小节)' },
+            annotations: {
+              type: 'array',
+              description: 'commit 时每个功能块的功能注释; 按 scan 返回的 path + name + start_line 匹配',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  path: { type: 'string', required: true, description: '相对扫描根的路径(scan 返回的 path)' },
+                  name: { type: 'string', required: true, description: '功能块名称(scan 返回的 name)' },
+                  start_line: { type: 'integer', required: true, description: '起始行(scan 返回的 start_line)' },
+                  summary: { type: 'string', description: '功能描述(一句话, 检索命中的主要依据)' },
+                  inputs: { type: 'string', description: '输入/入参' },
+                  outputs: { type: 'string', description: '输出/返回' },
+                  side_effects: { type: 'string', description: '副作用/外部影响' },
+                  depends_on: { type: 'string', description: '依赖的其它块/模块' },
+                },
+              },
+            },
+          },
+          output: {
+            schema: { type: 'object', additionalProperties: true },
+            render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+          },
+          async execute(args): Promise<Record<string, JsonValue>> {
+            const root = String(args.dir ?? '').trim()
+            if (!root) throw new Error('缺少 dir 参数')
+            if (args.action === 'scan') {
+              const res = await scanDirectory(root, {
+                maxBlocks: typeof args.max_blocks === 'number' ? args.max_blocks : undefined,
+              })
+              return {
+                action: 'scan',
+                root: res.root,
+                index_dirs: res.indexDirs,
+                files: res.files,
+                blocks: res.blocks,
+                skipped: res.skipped,
+                truncated: res.truncated,
+              } as unknown as Record<string, JsonValue>
+            }
+            const raw = Array.isArray(args.annotations) ? args.annotations : []
+            const annotations: CodeBlock[] = raw.map((a) => {
+              const item = a as Record<string, unknown>
+              return {
+                path: String(item.path ?? ''),
+                name: String(item.name ?? ''),
+                startLine: Number(item.start_line ?? 0),
+                endLine: 0,
+                kind: 'other',
+                signature: '',
+                doc: '',
+                preview: '',
+                summary: typeof item.summary === 'string' ? item.summary : undefined,
+                inputs: typeof item.inputs === 'string' ? item.inputs : undefined,
+                outputs: typeof item.outputs === 'string' ? item.outputs : undefined,
+                sideEffects: typeof item.side_effects === 'string' ? item.side_effects : undefined,
+                dependsOn: typeof item.depends_on === 'string' ? item.depends_on : undefined,
+              }
+            })
+            const res = await commitIndex(root, annotations, typeof args.note === 'string' ? args.note : '')
+            return { action: 'commit', ...res } as unknown as Record<string, JsonValue>
+          },
+        }),
+      ),
+    )
+  } catch (error) {
+    console.error('[dsh-workbench] workbench_code_index 注册失败:', error)
+  }
+
+  try {
+    ctx.effect(() =>
+      tools.register(
+        defineTool({
+          name: 'workbench_code_locate',
+          description:
+            '在目录(及其子目录)的 .workbench 代码索引中定位功能块, 返回「文件 + 起始行/结束行 + 功能描述」。写代码前需要找到已有函数/组件/类/方法的位置时使用; 命中后直接按行读取对应文件, 不要整文件扫描。',
+          parameters: {
+            query: { type: 'string', required: true, description: '要定位的功能关键词或描述(函数名/组件名/功能点)' },
+            dir: { type: 'string', required: true, description: '代码目录(绝对路径); 会递归搜索其下所有 .workbench/latest.md' },
+            top_k: { type: 'number', description: '最多返回条数, 默认 10' },
+          },
+          output: {
+            schema: {
+              type: 'array',
+              items: { type: 'object', additionalProperties: true },
+            },
+            render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+          },
+          async execute(args): Promise<Record<string, JsonValue>[]> {
+            const dir = String(args.dir ?? '').trim()
+            if (!dir) throw new Error('缺少 dir 参数')
+            const groups = await locateInIndexes(dir, String(args.query ?? ''), typeof args.top_k === 'number' ? args.top_k : 10)
+            if (groups.length === 0) {
+              return [
+                {
+                  hint: `目录 ${dir} 下未找到 .workbench 索引; 请先调用 workbench_code_index(action=scan, dir=...) 查看结构并 action=commit 生成索引`,
+                },
+              ] as unknown as Record<string, JsonValue>[]
+            }
+            return groups as unknown as Record<string, JsonValue>[]
+          },
+        }),
+      ),
+    )
+  } catch (error) {
+    console.error('[dsh-workbench] workbench_code_locate 注册失败:', error)
+  }
+
   // --- system prompt wiring -------------------------------------------------
   ctx.effect(() =>
     ctx.systemPrompt.section({
       name: 'workbench:search',
       order: 120,
       text: '工作台知识库已可用: 当问题需要检索工作台语料(本地文档目录)时调用 workbench_search。',
+    }),
+  )
+  // V4.2: code-index convention — keep the per-directory .workbench indexes
+  // fresh after every code change, and locate existing code through them
+  // instead of re-reading whole files (saves tokens and keeps line ranges).
+  // V5: directories listed in settings `indexWatchDirs` are auto-maintained by
+  // the host watcher, so their line numbers are always current.
+  ctx.effect(() =>
+    ctx.systemPrompt.section({
+      name: 'workbench:code-index',
+      order: 130,
+      text: '代码索引约定(.workbench): 对 settings 中 indexWatchDirs 配置的目录, 宿主会自动维护其 .workbench 索引(行号始终与当前代码一致); 每次生成或修改代码后, 仍应调用 workbench_code_index 更新索引并补功能注释(action=scan 查看功能块结构与行范围 → action=commit 提交功能注释); 写代码前需定位已有函数/组件/类时, 先调用 workbench_code_locate 获取「文件+起始/结束行」再按行精确读取, 不要整文件重复扫描。',
     }),
   )
   // V3 fix: the active prompt is injected as a DYNAMIC section — DSH only
@@ -687,10 +895,61 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     })
   }
   /**
-   * V4: run one workflow in SCRIPT mode — delegates to the DSH workflowEngine
+   * V4.1: live script-run registry. `workflow.runScript` publishes its run here
+   * and the engine's `workflow/*` events project into each run's progress so
+   * the panel can poll `workflow.progress` and cancel via `workflow.cancel`.
+   */
+  type ScriptRunEntry = { run: ReturnType<WorkflowEngineLike['start']>; progress: WorkflowProgress }
+  const scriptRuns = new Map<string, ScriptRunEntry>()
+
+  const progressOf = (info: unknown): WorkflowProgress | undefined => {
+    const id = isRecord(info) ? (info as { id?: unknown }).id : undefined
+    return typeof id === 'string' ? scriptRuns.get(id)?.progress : undefined
+  }
+
+  // Project the engine's workflow/* lifecycle events into the matching run's
+  // progress buffer. The listeners live for the plugin's whole lifetime and
+  // filter by run id, so concurrent runs never cross-contaminate.
+  if (ctx.on) {
+    const disposers: Array<() => void> = []
+    disposers.push(ctx.on('workflow/phase', (info: unknown, title: unknown) => {
+      const p = progressOf(info)
+      if (p) p.entries.push({ kind: 'phase', text: String(title ?? ''), at: Date.now() })
+    }))
+    disposers.push(ctx.on('workflow/log', (info: unknown, message: unknown) => {
+      const p = progressOf(info)
+      if (p) p.entries.push({ kind: 'log', text: String(message ?? ''), at: Date.now() })
+    }))
+    disposers.push(ctx.on('workflow/agent-start', (info: unknown, agent: unknown) => {
+      const p = progressOf(info)
+      if (!p || !isRecord(agent)) return
+      p.entries.push({
+        kind: 'agent-start',
+        seq: typeof agent['seq'] === 'number' ? agent['seq'] : undefined,
+        label: typeof agent['label'] === 'string' ? agent['label'] : undefined,
+        at: Date.now(),
+      })
+    }))
+    disposers.push(ctx.on('workflow/agent-end', (info: unknown, agent: unknown) => {
+      const p = progressOf(info)
+      if (!p || !isRecord(agent)) return
+      p.entries.push({
+        kind: 'agent-end',
+        seq: typeof agent['seq'] === 'number' ? agent['seq'] : undefined,
+        outcome: typeof agent['outcome'] === 'string' ? agent['outcome'] : undefined,
+        at: Date.now(),
+      })
+    }))
+    ctx.effect(() => () => { for (const dispose of disposers) dispose() }, 'dsh-workbench: workflow progress projection')
+  }
+
+  /**
+   * V4.1: run one workflow in SCRIPT mode — delegates to the DSH workflowEngine
    * (the same engine behind the model-facing `workflow` tool): the JS
    * orchestration script runs on a worker thread and fans out real subagents
-   * via agent()/pipeline()/parallel(). Resolves when the whole script settles.
+   * via agent()/pipeline()/parallel(). Returns IMMEDIATELY with the runId;
+   * the run settles in the background and its outcome lands on
+   * `workflow.progress` (status + value + error), which the panel polls.
    */
   async function runScriptWorkflow(id: string, inputs: Record<string, string>, sessionId?: string): Promise<WorkflowScriptResult> {
     const state = viewOf().value
@@ -722,19 +981,45 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
       ...(agent !== undefined ? { parent: agent } : {}),
       signal: new AbortController().signal,
     })
-    try {
-      const result = await run.result
-      return {
-        runId: run.id,
-        agentsStarted: result.agentsStarted,
-        value: result.value,
-        stopReason: result.stopReason,
-        ...(result.error ? { error: result.error } : {}),
-      }
-    } finally {
-      await run.dispose().catch(() => undefined)
-    }
+    // Publish the run so workflow/* events project into live progress and the
+    // panel can cancel by runId. Settlement happens in the background.
+    const progress: WorkflowProgress = { runId: run.id, status: 'running', agentsStarted: 0, entries: [] }
+    scriptRuns.set(run.id, { run, progress })
+    void run.result
+      .then((result) => {
+        progress.status = result.stopReason === 'completed' ? 'completed' : result.stopReason === 'cancelled' ? 'cancelled' : 'error'
+        progress.agentsStarted = result.agentsStarted
+        if (result.value !== undefined) progress.value = result.value
+        if (result.error) progress.error = result.error
+      })
+      .catch((error) => {
+        progress.status = 'error'
+        progress.error = error instanceof Error ? error.message : String(error)
+      })
+      .finally(() => {
+        void run.dispose().catch(() => undefined)
+        // Keep the progress readable briefly after settling so a racing poll
+        // does not 404, then drop the entry.
+        const runId = run.id
+        setTimeout(() => scriptRuns.delete(runId), 60_000).unref?.()
+      })
+    return { runId: run.id, agentsStarted: 0, stopReason: 'running' }
   }
+  /** V4.1: read the live progress of one script-mode run (or 404 when expired). */
+  async function workflowProgress(runId: string): Promise<WorkflowProgress> {
+    const entry = scriptRuns.get(runId)
+    if (!entry) throw new WorkbenchApiError('not-found', `运行 "${runId}" 不存在或已过期`, 404)
+    return entry.progress
+  }
+
+  /** V4.1: cancel a running script-mode workflow by run id. Idempotent no-op for unknown ids. */
+  async function cancelScript(runId: string): Promise<{ cancelled: boolean }> {
+    const entry = scriptRuns.get(runId)
+    if (!entry || entry.progress.status !== 'running') return { cancelled: false }
+    entry.run.cancel('user cancelled from the workbench panel')
+    return { cancelled: true }
+  }
+
   async function activateWorkflow(id: string): Promise<SettingsView> {
     return updateState({ activeWorkflowId: id })
   }
@@ -883,6 +1168,8 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     removeWorkflow,
     runWorkflow,
     runScript: (id: string, inputs: Record<string, string>, sessionId?: string) => runScriptWorkflow(id, inputs, sessionId),
+    scriptProgress: (runId: string) => workflowProgress(runId),
+    cancelScript: (runId: string) => cancelScript(runId),
     activateWorkflow,
     setOverride,
     resetAllOverrides,
@@ -899,6 +1186,18 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
   // --- RPC route ------------------------------------------------------------
   ctx.effect(() => registerApiRoutes(ctx.webServer, runtime), 'dsh-workbench: /workbench/api routes')
 
+  // V5: built-in .workbench index watcher lifecycle. Reconfigured by every
+  // settings update (restartIndexWatch) and fully disposed with the plugin.
+  ctx.effect(() => {
+    restartIndexWatch()
+    return () => {
+      if (indexWatchDispose) {
+        indexWatchDispose()
+        indexWatchDispose = null
+      }
+    }
+  }, 'dsh-workbench: built-in index watch')
+
   // Warm the template lists only when the user has none yet (first run).
   const initial = viewOf().value
   if (initial.workflows.length === 0) {
@@ -914,6 +1213,24 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
   for (const server of initial.mcpServers) {
     if (server.enabled) void syncServerConnection(server)
   }
+
+  // V6: preset auto-configure → mount-verify → GitHub publish pipeline.
+  // Runs once per plugin activation — i.e. whenever someone downloads/installs
+  // this plugin into a DSH. Configures the bundled workbench preset into
+  // $DSH_HOME/.agent-presets, verifies it mounts (standingKeyFor), and after
+  // verification uploads the workspace to GitHub as the updated version (only
+  // from the owner's git worktree; downloader installs skip the push).
+  void runPublishPipeline({
+    agentPresets: ctx.agentPresets,
+    dshHome: homedir(),
+    getState: () => viewOf().value.publish,
+    recordStatus: async (status: string) => {
+      const view = viewOf()
+      await ctx.settings
+        .update(SETTINGS_NS, { publish: { ...view.value.publish, lastStatus: status, lastAt: Date.now() } })
+        .catch(() => undefined)
+    },
+  })
 }
 
 /** Project a tool result into lossless-JSON friendly shape for the panel. */

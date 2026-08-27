@@ -20,6 +20,7 @@ import type {
   StateSnapshot,
   WorkflowDefinition,
   WorkflowNode,
+  WorkflowProgress,
   WorkflowScriptResult,
   WorkflowStepLog,
 } from '../../shared/types.js'
@@ -39,6 +40,11 @@ const NODE_KINDS: Array<{ value: WorkflowNode['kind']; label: string }> = [
   { value: 'output', label: '输出 (output)' },
 ]
 
+/** Unique node id: timestamp base + random suffix (avoids same-ms collisions). */
+function freshNodeId(): string {
+  return `n${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+}
+
 export function WorkflowPanel(props: PanelProps) {
   useLocale()
   const { snapshot, refresh, sessionId } = props
@@ -48,8 +54,11 @@ export function WorkflowPanel(props: PanelProps) {
   const skills = snapshot.skills ?? []
   const [selectedId, setSelectedId] = React.useState<string | null>(workflows[0]?.id ?? null)
   const [draft, setDraft] = React.useState<WorkflowDefinition | null>(null)
+  // V4.1: the last persisted shape, to detect unsaved edits before switching.
+  const [savedSnapshot, setSavedSnapshot] = React.useState<string>('')
   const [logs, setLogs] = React.useState<WorkflowStepLog[] | null>(null)
   const [scriptResult, setScriptResult] = React.useState<WorkflowScriptResult | null>(null)
+  const [scriptProgress, setScriptProgress] = React.useState<WorkflowProgress | null>(null)
   const [inputsText, setInputsText] = React.useState('')
   const [newKind, setNewKind] = React.useState<WorkflowNode['kind']>('prompt')
   const [newLabel, setNewLabel] = React.useState('')
@@ -60,21 +69,35 @@ export function WorkflowPanel(props: PanelProps) {
   const [view, setView] = React.useState<'list' | 'graph'>('list')
   const [graphSelected, setGraphSelected] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
+  // V4.1: script-mode runs settle asynchronously; this flag keeps the run
+  // section in "running" state until progress reports a terminal status.
+  const [scriptRunning, setScriptRunning] = React.useState(false)
   const [err, setErr] = React.useState<string | null>(null)
   const [note, setNote] = React.useState<string | null>(null)
+  const [expandedLog, setExpandedLog] = React.useState<number | null>(null)
 
   React.useEffect(() => {
     if (selectedId && !workflows.some((w) => w.id === selectedId)) setSelectedId(null)
     const active = workflows.find((w) => w.id === selectedId) ?? workflows[0] ?? null
     setDraft(active ? structuredClone(active) : null)
+    setSavedSnapshot(active ? JSON.stringify(active) : '')
     setLogs(null)
     setScriptResult(null)
+    setScriptProgress(null)
+    setScriptRunning(false)
+    setExpandedLog(null)
   }, [workflows, selectedId])
 
+  // V4.1: dirty detection — draft differs from the last persisted shape.
+  const dirty = draft !== null && JSON.stringify(draft) !== savedSnapshot
+
   function select(id: string) {
+    if (dirty && !window.confirm(t('wfUnsaved'))) return
     setSelectedId(id)
     setLogs(null)
     setScriptResult(null)
+    setScriptProgress(null)
+    setScriptRunning(false)
   }
 
   async function save() {
@@ -84,6 +107,7 @@ export function WorkflowPanel(props: PanelProps) {
     try {
       await call('workflow.save', { workflow: draft })
       await refresh()
+      setSavedSnapshot(JSON.stringify(draft))
       setNote(t('wfSaved'))
     } catch (e) {
       setErr(errorMessage(e))
@@ -94,21 +118,29 @@ export function WorkflowPanel(props: PanelProps) {
 
   async function remove() {
     if (!draft) return
-    await call('workflow.remove', { id: draft.id })
-    setSelectedId(null)
-    await refresh()
+    if (!window.confirm(t('wfConfirmDeleteWorkflow'))) return
+    setErr(null)
+    try {
+      await call('workflow.remove', { id: draft.id })
+      setSelectedId(null)
+      await refresh()
+    } catch (e) {
+      setErr(errorMessage(e))
+    }
   }
 
   async function run() {
     if (!draft) return
     setErr(null)
-    setBusy(true)
     try {
       if (draft.mode === 'script') {
+        setScriptProgress(null)
+        setLogs(null)
         const result = await call<WorkflowScriptResult>('workflow.runScript', { id: draft.id, inputs: {}, sessionId })
         setScriptResult(result)
-        setLogs(null)
+        if (result.runId) setScriptRunning(true)
       } else {
+        setBusy(true)
         const inputs = parsePairs(inputsText)
         const result = await call<WorkflowStepLog[]>('workflow.run', { id: draft.id, inputs, sessionId })
         setLogs(result)
@@ -121,7 +153,56 @@ export function WorkflowPanel(props: PanelProps) {
     }
   }
 
+  // V4.1: poll live progress while a script-mode run is in flight.
+  const progressTimer = React.useRef<ReturnType<typeof setInterval> | null>(null)
+  React.useEffect(() => {
+    if (draft?.mode !== 'script' || !scriptRunning || !scriptResult?.runId) {
+      if (progressTimer.current) {
+        clearInterval(progressTimer.current)
+        progressTimer.current = null
+      }
+      return
+    }
+    const runId = scriptResult.runId
+    progressTimer.current = setInterval(async () => {
+      try {
+        const p = await call<WorkflowProgress>('workflow.progress', { runId })
+        setScriptProgress(p)
+        if (p.status !== 'running') {
+          // Settled: fold the outcome into scriptResult so the result card shows.
+          setScriptResult((prev) => prev && prev.runId === runId ? {
+            runId: p.runId,
+            agentsStarted: p.agentsStarted,
+            value: p.value,
+            stopReason: p.status,
+            ...(p.error ? { error: p.error } : {}),
+          } : prev)
+          setScriptRunning(false)
+        }
+      } catch {
+        // 404 means the run expired; keep polling state simple and let the
+        // user re-run. Ignore transient errors.
+      }
+    }, 1000)
+    return () => {
+      if (progressTimer.current) clearInterval(progressTimer.current)
+      progressTimer.current = null
+    }
+  }, [draft?.mode, scriptRunning, scriptResult?.runId])
+
+  async function cancelScriptRun() {
+    if (!scriptResult?.runId) return
+    setErr(null)
+    try {
+      await call('workflow.cancel', { runId: scriptResult.runId })
+      setNote(t('wfRunCancelNote'))
+    } catch (e) {
+      setErr(errorMessage(e))
+    }
+  }
+
   async function restoreTemplates() {
+    if (!window.confirm(t('wfConfirmRestore'))) return
     setBusy(true)
     try {
       const templates = await call<WorkflowDefinition[]>('workflow.templates', {})
@@ -168,7 +249,7 @@ export function WorkflowPanel(props: PanelProps) {
         break
       }
     }
-    const node: WorkflowNode = { id: `n${Date.now().toString(36)}`, kind: newKind, label, params }
+    const node: WorkflowNode = { id: freshNodeId(), kind: newKind, label, params }
     setDraft({ ...draft, nodes: [...draft.nodes, node] })
     setNewLabel('')
     setNewParams('')
@@ -200,8 +281,12 @@ export function WorkflowPanel(props: PanelProps) {
         <span style={{ display: 'inline-flex', gap: 8 }}>
           <Button disabled={busy} onClick={() => void restoreTemplates()}>{t('wfRestore')}</Button>
           <Button variant="primary" onClick={() => {
+            if (dirty && !window.confirm(t('wfUnsaved'))) return
             setSelectedId(null)
             setDraft({ id: '', name: t('wfNewName'), description: '', nodes: [], mode: 'nodes', script: '', meta: { name: '', description: '', phases: [] } })
+            setSavedSnapshot('')
+            setScriptRunning(false)
+            setScriptProgress(null)
           }}>{t('wfNew')}</Button>
         </span>
       }>
@@ -296,6 +381,11 @@ export function WorkflowPanel(props: PanelProps) {
                         setDraft({ ...draft, nodes: [...draft.nodes, newNodeOf(kind)] })
                         setGraphSelected(null)
                       }}
+                      onUpdateNode={(id, patch) => {
+                        setDraft({ ...draft, nodes: draft.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) })
+                      }}
+                      tools={tools}
+                      skills={skills}
                     />
                   </ErrorBoundary>
                   {draft.nodes.length === 0 && <Empty text={t('wfNodeEmptyGraph')} />}
@@ -374,11 +464,45 @@ export function WorkflowPanel(props: PanelProps) {
             </Field>
           )}
           <div style={styles.row}>
-            <Button variant="primary" disabled={busy || !draft.id} onClick={() => void run()}>
+            <Button variant="primary" disabled={busy || scriptRunning || !draft.id} onClick={() => void run()}>
               {mode === 'script' ? t('wfRunScriptBtn') : t('wfRealRun')}
             </Button>
+            {mode === 'script' && scriptRunning && scriptResult?.runId && (
+              <Button variant="danger" onClick={() => void cancelScriptRun()}>{t('wfCancelRun')}</Button>
+            )}
             <span style={styles.dim}>{mode === 'script' ? t('wfRunScriptNote') : t('wfRunNote')}</span>
           </div>
+
+          {mode === 'script' && scriptRunning && scriptProgress && (
+            <div style={{ marginTop: 8, border: `1px solid ${palette.border}`, borderRadius: 8, padding: 8, background: palette.panelAlt }}>
+              <div style={{ ...styles.dim, marginBottom: 6 }}>
+                <span style={styles.warn}>● {t('wfRunning')}</span>
+                <span style={{ marginLeft: 12 }}>{t('wfAgents')}: {scriptProgress.agentsStarted}</span>
+              </div>
+              {scriptProgress.entries.length === 0
+                ? <div style={styles.dim}>{t('wfNoProgress')}</div>
+                : (
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: palette.text, maxHeight: 200, overflowY: 'auto' }}>
+                    {scriptProgress.entries.map((e, i) => (
+                      <li key={i} style={{ marginBottom: 2 }}>
+                        {e.kind === 'phase' && <span style={{ color: palette.accent }}>▸ {t('wfProgressPhase')}: {e.text}</span>}
+                        {e.kind === 'log' && <span style={{ color: palette.dim }}>· {e.text}</span>}
+                        {e.kind === 'agent-start' && <span style={styles.warn}>↗ {t('wfProgressAgent')} #{e.seq} {e.label} …</span>}
+                        {e.kind === 'agent-end' && (
+                          <span>
+                            ✔ {t('wfProgressAgent')} #{e.seq} —{' '}
+                            {e.outcome === 'completed' ? <span style={styles.ok}>{t('wfAgentCompleted')}</span>
+                              : e.outcome === 'failed' ? <span style={styles.danger}>{t('wfAgentFailed')}</span>
+                                : e.outcome === 'cancelled' ? <span style={styles.warn}>{t('wfAgentCancelled')}</span>
+                                  : <span style={styles.dim}>{e.outcome ?? '—'}</span>}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+            </div>
+          )}
 
           {mode === 'script' && scriptResult && (
             <div>
@@ -404,14 +528,31 @@ export function WorkflowPanel(props: PanelProps) {
               </thead>
               <tbody>
                 {logs.map((step) => (
-                  <tr key={step.index}>
-                    <td style={styles.td}>{step.index}</td>
-                    <td style={styles.td}>{step.label}</td>
-                    <td style={styles.td}>
-                      {step.status === 'ok' ? <span style={styles.ok}>{t('wfStatusOk')}</span> : step.status === 'running' ? <span style={styles.warn}>{t('wfStatusRun')}</span> : step.status === 'skipped' ? <span style={styles.warn}>{t('wfStatusSkip')}</span> : <span style={styles.danger}>{t('wfStatusErr')}</span>}
-                    </td>
-                    <td style={styles.td}>{step.detail}</td>
-                  </tr>
+                  <React.Fragment key={step.index}>
+                    <tr>
+                      <td style={styles.td}>{step.index}</td>
+                      <td style={styles.td}>{step.label}</td>
+                      <td style={styles.td}>
+                        {step.status === 'ok' ? <span style={styles.ok}>{t('wfStatusOk')}</span> : step.status === 'running' ? <span style={styles.warn}>{t('wfStatusRun')}</span> : step.status === 'skipped' ? <span style={styles.warn}>{t('wfStatusSkip')}</span> : <span style={styles.danger}>{t('wfStatusErr')}</span>}
+                      </td>
+                      <td style={styles.td}>
+                        {step.detail}
+                        {step.full !== undefined && (
+                          <div style={{ marginTop: 4 }}>
+                            <button
+                              style={{ ...styles.button, fontSize: 11, padding: '2px 8px' }}
+                              onClick={() => setExpandedLog(expandedLog === step.index ? null : step.index)}
+                            >
+                              {expandedLog === step.index ? `▲ ${t('close')}` : `▼ ${t('wfOutputFull')} (${step.full.length} 字符)`}
+                            </button>
+                            {expandedLog === step.index && (
+                              <pre style={{ ...styles.pre, marginTop: 6, maxHeight: 320 }}>{step.full}</pre>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -497,5 +638,5 @@ function newNodeOf(kind: WorkflowNode['kind']): WorkflowNode {
       params = { format: 'markdown' }
       break
   }
-  return { id: `n${Date.now().toString(36)}`, kind, label, params }
+  return { id: freshNodeId(), kind, label, params }
 }

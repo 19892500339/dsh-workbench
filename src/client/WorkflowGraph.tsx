@@ -1,16 +1,19 @@
 /**
- * 工作流拖拽画布 (V2.2, 现成编排引擎 @logicflow/core, Apache-2.0):
+ * 工作流拖拽画布 (V2.2 → V4.1):
  *
  * - 引擎: LogicFlow(didi 出品, 11k+ star)提供拖拽、缩放、事件与数据模型;
  * - 节点: 自定义 RectNode 视图, 颜色/描边等全部通过模型属性内联渲染
  *   (不引入官方 CSS, 避免复制第三方样式, 仓库零版权风险);
  * - 交互: 左侧节点面板点击添加节点; 画布内拖拽节点 — 引擎实时跟随,
  *   拖动中按 y 坐标实时重链执行顺序边, 松手后把新顺序写回工作流;
- * - 选中节点高亮, 面板按钮删除选中节点。
+ * - 选中节点高亮, 面板按钮删除选中节点;
+ * - V4.1: 全屏作用于整个布局(左面板保留), 选中节点出现内联编辑面板
+ *   (label + kind 参数; tool/skill 从传入的工具/技能列表下拉选择)。
  */
 import React from 'react'
 import LogicFlowDefault, { RectNode, RectNodeModel, h } from '@logicflow/core'
-import type { WorkflowNode } from '../shared/types.js'
+import type { ToolView, SkillView, WorkflowNode } from '../shared/types.js'
+import { t, useLocale } from './i18n.js'
 
 /**
  * Interop guard: in a CJS client bundle rolldown's node-mode interop can bind
@@ -27,6 +30,11 @@ export interface WorkflowGraphProps {
   onChange(nodes: WorkflowNode[]): void
   /** Add a node of the given kind to the end of the chain. */
   onAddNode(kind: WorkflowNode['kind']): void
+  /** V4.1: partially update one node (label/params) from the inline editor. */
+  onUpdateNode(id: string, patch: Partial<WorkflowNode>): void
+  /** V4.1: live tool/skill catalogs for the node editor dropdowns. */
+  tools?: ToolView[]
+  skills?: SkillView[]
 }
 
 const NODE_GAP = 90
@@ -120,8 +128,119 @@ class WbNodeView extends RectNode {
   }
 }
 
+/** Minimal inline edit form for the selected node. */
+function NodeEditor(props: {
+  node: WorkflowNode
+  tools: ToolView[]
+  skills: SkillView[]
+  onUpdate(id: string, patch: Partial<WorkflowNode>): void
+  onClose(): void
+}) {
+  useLocale()
+  const { node, tools, skills, onUpdate, onClose } = props
+  const patch = (p: Partial<WorkflowNode>) => onUpdate(node.id, p)
+  const params = (next: Record<string, string>) => patch({ params: next })
+
+  const inputStyle: React.CSSProperties = {
+    background: '#1d222b', border: '1px solid #2a3140', color: '#dbe2ee',
+    borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit',
+    width: '100%', boxSizing: 'border-box', marginBottom: 6, outline: 'none',
+  }
+  const labelStyle: React.CSSProperties = { fontSize: 11, color: '#8b94a7', display: 'block', marginBottom: 3 }
+
+  return (
+    <div style={{
+      border: '1px solid #2a3140', borderRadius: 8, background: '#171b22',
+      padding: 10, marginTop: 10, minWidth: 240,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#dbe2ee' }}>{t('wfEditNode')}</span>
+        <span style={{ fontSize: 11, color: KIND_COLOR[node.kind] }}>{node.kind}</span>
+        <span style={{ marginLeft: 'auto' }}>
+          <button onClick={onClose} style={panelButtonStyle}>{t('close')}</button>
+        </span>
+      </div>
+
+      <label style={labelStyle}>{t('wfParamLabel')}</label>
+      <input style={inputStyle} value={node.label} onChange={(e) => patch({ label: e.target.value })} />
+
+      {node.kind === 'prompt' && (
+        <>
+          <label style={labelStyle}>{t('wfParamText')}</label>
+          <textarea style={{ ...inputStyle, minHeight: 64, resize: 'vertical', fontFamily: 'ui-monospace, monospace' }}
+            value={node.params['text'] ?? ''}
+            onChange={(e) => params({ ...node.params, text: e.target.value })}
+            placeholder="支持 {{var}} 占位符" />
+        </>
+      )}
+
+      {node.kind === 'transform' && (
+        <>
+          <label style={labelStyle}>{t('wfParamOp')}</label>
+          <select style={inputStyle} value={node.params['op'] ?? 'append'}
+            onChange={(e) => params({ ...node.params, op: e.target.value })}>
+            <option value="append">{t('wfParamOpAppend')}</option>
+            <option value="prepend">{t('wfParamOpPrepend')}</option>
+            <option value="replace">{t('wfParamOpReplace')}</option>
+          </select>
+          {(node.params['op'] ?? 'append') === 'replace' && (
+            <>
+              <label style={labelStyle}>{t('wfParamSearch')}</label>
+              <input style={inputStyle} value={node.params['search'] ?? ''}
+                onChange={(e) => params({ ...node.params, search: e.target.value })} />
+            </>
+          )}
+          <label style={labelStyle}>{t('wfParamValue')}</label>
+          <textarea style={{ ...inputStyle, minHeight: 48, resize: 'vertical' }} value={node.params['value'] ?? ''}
+            onChange={(e) => params({ ...node.params, value: e.target.value })} />
+        </>
+      )}
+
+      {node.kind === 'tool' && (
+        <>
+          <label style={labelStyle}>{t('wfParamToolName')}</label>
+          <select style={inputStyle} value={node.params['name'] ?? ''}
+            onChange={(e) => params({ ...node.params, name: e.target.value })}>
+            <option value="">{t('wfSelectTool')}</option>
+            {tools.map((tool) => (
+              <option key={tool.name} value={tool.name}>{tool.name}</option>
+            ))}
+          </select>
+          <label style={labelStyle}>{t('wfParamToolArgs')}</label>
+          <textarea style={{ ...inputStyle, minHeight: 48, resize: 'vertical', fontFamily: 'ui-monospace, monospace' }}
+            value={node.params['args'] ?? ''}
+            onChange={(e) => params({ ...node.params, args: e.target.value })}
+            placeholder={t('wfArgsJson')} />
+        </>
+      )}
+
+      {node.kind === 'skill' && (
+        <>
+          <label style={labelStyle}>{t('wfParamSkillName')}</label>
+          <select style={inputStyle} value={node.params['name'] ?? ''}
+            onChange={(e) => params({ ...node.params, name: e.target.value })}>
+            <option value="">{t('wfSelectSkill')}</option>
+            {skills.map((skill) => (
+              <option key={skill.name} value={skill.name}>{skill.name}</option>
+            ))}
+          </select>
+        </>
+      )}
+
+      {node.kind === 'output' && (
+        <>
+          <label style={labelStyle}>{t('wfParamFormat')}</label>
+          <input style={inputStyle} value={node.params['format'] ?? 'text'}
+            onChange={(e) => params({ ...node.params, format: e.target.value })} placeholder="markdown / text" />
+        </>
+      )}
+    </div>
+  )
+}
+
 export function WorkflowGraph(props: WorkflowGraphProps) {
-  const { nodes, selectedId, onSelect, onChange, onAddNode } = props
+  useLocale()
+  const { nodes, selectedId, onSelect, onChange, onAddNode, onUpdateNode, tools = [], skills = [] } = props
   const containerRef = React.useRef<HTMLDivElement | null>(null)
   const lfRef = React.useRef<InstanceType<typeof LogicFlowDefault> | null>(null)
   const draggingRef = React.useRef(false)
@@ -173,6 +292,10 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
       grid: false,
       stopScrollGraph: true,
       keyboard: { enabled: true },
+      // V4.1: disable the built-in double-click text editor — our nodes render
+      // their own labels (no `text`), so the TextEditTool would pop an input
+      // over the graph and hide everything. Editing happens in the side panel.
+      textEdit: false,
       background: { color: '#0d1117' },
     })
     lf.register({ type: 'wbNode', view: WbNodeView, model: WbNodeModel })
@@ -207,6 +330,11 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
 
     lf.on('node:click', ({ data }: { data: { id: string } }) => {
       handlersRef.current.onSelect(data.id === selectedIdRef.current ? null : data.id)
+    })
+    // V4.1: double-click opens the inline editor — force-select the node so a
+    // prior single-click toggle (which may have deselected it) cannot win.
+    lf.on('node:dbclick', ({ data }: { data: { id: string } }) => {
+      handlersRef.current.onSelect(data.id)
     })
     lf.on('blank:click', () => handlersRef.current.onSelect(null))
     lf.on('node:dragstart', () => { draggingRef.current = true })
@@ -262,11 +390,14 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
 
   function deleteSelected() {
     if (!selectedId) return
+    if (!window.confirm(t('wfDeleteConfirm', { label: nodes.find((n) => n.id === selectedId)?.label ?? '' }))) return
     onChange(nodes.filter((n) => n.id !== selectedId))
   }
 
+  const selectedNode = selectedId ? nodes.find((n) => n.id === selectedId) ?? null : null
+
   return (
-    <div style={{ display: 'flex', gap: 10 }}>
+    <div style={fullscreen ? fullscreenLayoutStyle : { display: 'flex', gap: 10 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 118 }}>
         {NODE_KINDS.map((k) => (
           <button
@@ -278,20 +409,29 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
           </button>
         ))}
         <button style={{ ...panelButtonStyle, color: '#e2544d' }} onClick={deleteSelected} disabled={!selectedId}>
-          删除选中
+          {t('wfDeleteNode')}
         </button>
         <div style={{ fontSize: 11, color: '#8b94a7', marginTop: 4 }}>
-          拖拽节点改变执行顺序; 连线按顺序自动生成; 点击节点选中。
+          {t('wfEditHint')}
         </div>
+        {selectedNode && (
+          <NodeEditor
+            node={selectedNode}
+            tools={tools}
+            skills={skills}
+            onUpdate={onUpdateNode}
+            onClose={() => onSelect(null)}
+          />
+        )}
       </div>
       <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
         <div
           ref={containerRef}
-          style={fullscreen ? fullscreenStyle : normalStyle}
+          style={fullscreen ? fullscreenCanvasStyle : normalStyle}
         />
         <button
           onClick={() => setFullscreen((v) => !v)}
-          title={fullscreen ? '退出全屏' : '全屏查看/编辑 (Esc 也可退出)'}
+          title={fullscreen ? t('wfFullscreenExit') : t('wfFullscreenEnter')}
           style={{
             position: 'absolute',
             top: 8,
@@ -307,7 +447,7 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
             fontFamily: 'inherit',
           }}
         >
-          {fullscreen ? '退出全屏' : '⛶ 全屏'}
+          {fullscreen ? t('wfFullscreenExit') : '⛶ ' + t('wfToggleFullscreen')}
         </button>
       </div>
     </div>
@@ -323,15 +463,25 @@ const normalStyle: React.CSSProperties = {
   background: '#0d1117',
 }
 
-/** Fullscreen canvas container covering the viewport. */
-const fullscreenStyle: React.CSSProperties = {
+/** Fullscreen canvas container filling the viewport (left panel stays). */
+const fullscreenCanvasStyle: React.CSSProperties = {
+  height: 'calc(100vh - 24px)',
+  border: '1px solid #2a3140',
+  borderRadius: 8,
+  overflow: 'hidden',
+  background: '#0d1117',
+}
+
+/** Fullscreen outer layout covering the viewport with the node panel intact. */
+const fullscreenLayoutStyle: React.CSSProperties = {
   position: 'fixed',
   inset: 0,
   zIndex: 9999,
-  border: 'none',
-  borderRadius: 0,
-  overflow: 'hidden',
-  background: '#0d1117',
+  background: '#0f1217',
+  padding: 12,
+  boxSizing: 'border-box',
+  display: 'flex',
+  gap: 10,
 }
 
 const panelButtonStyle: React.CSSProperties = {

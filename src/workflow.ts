@@ -180,7 +180,9 @@ export async function executeWorkflow(
             const rawArgs = n.params['args'] ?? ''
             if (rawArgs.trim()) {
               try {
-                const parsed: unknown = JSON.parse(rawArgs)
+                // V4.1: substitute {{var}} placeholders before parsing so input
+                // variables reach tool arguments, matching prompt/transform.
+                const parsed: unknown = JSON.parse(substitute(rawArgs, inputs))
                 if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
                   args = parsed as Record<string, unknown>
                 } else {
@@ -221,6 +223,8 @@ export async function executeWorkflow(
           break
         }
         case 'output': {
+          // V4.1: carry the full accumulated buffer so the panel can show it uncapped.
+          entry.full = buffer
           entry.detail = `输出 ${buffer.length} 字符 (${n.params['format'] ?? 'text'}) — ${clip(buffer, 200)}`
           break
         }

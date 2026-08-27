@@ -26,6 +26,7 @@
 | 🧩 技能 | 查看已安装技能 / 从本地 `SKILL.md` 导入 / 关注开关 | `ctx.skills` 注册表展示 + `~/.dsh/skills/` 导入 |
 | 🛠️ 工具 | **显示 DSH 全量工具**(含已隐藏)/ 传参测试调用 / 「对模型隐藏」运行时开关 | `ctx.tools` 注册表 + `ctx.tools.restrict({ deny })` 即时影响模型可见性 |
 | 📝 Prompt | 内置 8 套领域模板 / 模板 CRUD / `{{变量}}` 预览 / 切换生效 / 输入框 📝 弹层(最近 3 个 + 取消 + 注入预览) | 宿主动态 section `workbench:active-prompt` 注入(未激活不占上下文) |
+| 📇 代码索引 | **每个代码目录维护 `.workbench/` 索引**(功能块 → 文件 + 起始/结束行 + 功能注释),时间戳快照 + `latest.md` 指针;`workbench_code_index` 扫描/提交注释,`workbench_code_locate` 直达代码行 | 宿主工具(模型驱动): 改码后自动建索引,写码前先定位再按行读取,**避免整文件重复扫描,大幅省 token** |
 
 **机制开关(输入框内)**:📚 RAG(默认/自定义/指定知识库)· 🛠️ 工具(默认全量/按隐藏过滤)· 🧩 技能(原生/注入清单)· 🔄 工作流(原生/按激活执行),以及「一键还原默认」。
 
@@ -120,6 +121,100 @@ dsh plugin --profile web add link:<本仓库绝对路径>
 - **界面语言?** 跟随 DSH 的 zh/en 自动切换,无需设置。
 - **上传大文件?** 单文件 ≤20MB。
 
+### 9. 代码索引(.workbench)——让模型直达代码,省 token
+
+> 每个代码目录维护自己的 `.workbench/` 文件夹,里面是按时间戳命名的索引快照 + 永远最新的 `latest.md`。功能块记录「文件 + 起始行/结束行 + 功能注释」,模型写代码时**检索索引直达代码行**,不用整文件重复扫描。
+
+**工作方式**(宿主自动注入提示词,无需手动开关):
+
+1. **改码后建索引**:模型生成/修改代码后,自动调用 `workbench_code_index`:
+   - `action=scan` 扫描目录,返回每个功能块(函数/方法/类/组件/常量/类型)的**名称、类型、起始行、结束行、签名**,无需读整文件;
+   - 模型(刚写完代码最懂)为每个功能块补一句**功能注释**;
+   - `action=commit` 把注释合并写入 `.workbench/<时间戳>.md` 快照,并更新 `latest.md`。目录下**每个含代码的子目录各有自己的 `.workbench`**。
+2. **写码前定位**:需要找已有函数/组件时,调用 `workbench_code_locate(query, dir)`,返回「文件 + 起始/结束行 + 功能描述」,再按行精确读取。
+3. **RAG 联动**:把项目目录配置为知识库后,`workbench_search` 会自动纳入各 `.workbench/latest.md`(历史快照不入索引,避免膨胀),检索命中同样可直达。
+
+**索引 md 格式**(紧凑,一行一块):
+
+```markdown
+# 📇 代码索引 · <目录> · 2026-08-26_231843
+## 🔄 本次变更        # 新增/更新/移除块数,来自与上一份 latest.md 的对比
+## 📄 文件清单        # 文件 | 块数 | 行数
+## 🧩 功能块
+### `api.ts`
+#### 🔧 函数 `registerApiRoutes` · L257-L290
+- 签名: `export function registerApiRoutes(`
+- 功能: 注册 /workbench/api RPC 路由
+```
+
+> 说明: 分类由**当前对话的模型**完成(零外部 API 依赖);索引是生成物,建议在项目 `.gitignore` 中加入 `.workbench/`。**语言支持**(启发式解析,无 tree-sitter 依赖,行范围仅供定位):
+>
+> - **精确解析**: JS/TS/JSX/TSX、Python、Go、Rust、Java、C#、Shell、Kotlin、Swift、PHP、C/C++(含模板函数与 ObjC `.m/.mm` 方法)、Dart
+> - **常规支持**: Ruby / Lua(`def…end` 缩进式)、Scala、Groovy、Perl(`sub`)、Vue / Svelte(提取 `<script>` 块,行号对齐原文件)
+> - **不在白名单的文件完全跳过**(如 HTML/CSS/JSON/YAML、SQL、R、Haskell 等,不产生索引记录)
+
+### 10. 实时更新行号(脚本)——索引自动跟随代码,无需模型记得 commit
+
+行号式索引的短板是**过期**:代码一改,索引里的行号就漂移。核心是 `refreshIndex`——**不经过模型**,自动重扫目录、按「文件名+函数名」就近继承上一份索引里的功能注释、行号用最新的。两种驱动方式:
+
+**① 插件内置 watch(推荐,零脚本)**:在 settings 里配置 `indexWatchDirs`,宿主启动后自动轮询维护这些目录的索引,行号永远最新:
+
+```yaml
+# ~/.dsh/settings.yaml
+workbench:
+  indexWatchDirs:
+    - E:\dsh_work\dsh-workbench
+    - E:\dsh_work\my-project
+```
+
+**② 独立脚本**(适合不想开宿主 watch 或挂 CI 的场景):
+
+```sh
+# 实时守护(后台常驻)
+node dsh-workbench/scripts/watch-workbench.mjs --dir <你的代码目录> [--interval 2000] [--snapshot 60000]
+# 一次性刷新(适合挂 git hook / npm build)
+node dsh-workbench/scripts/refresh-workbench.mjs <你的代码目录>
+```
+
+**挂在 git post-commit hook**(`.git/hooks/post-commit`):
+
+```sh
+#!/bin/sh
+node /绝对路径/dsh-workbench/scripts/refresh-workbench.mjs "$(git rev-parse --show-toplevel)"
+```
+
+**挂在 npm script**:
+
+```json
+{ "build": "tsc && node dsh-workbench/scripts/refresh-workbench.mjs ." }
+```
+
+参数说明:
+
+| 参数 | 含义 |
+|---|---|
+| `--dir` | 要监听维护索引的代码目录(必填) |
+| `--interval` | 轮询间隔毫秒,默认 2000 |
+| `--snapshot` | 快照节流毫秒,默认 60000(1 分钟内只写一份历史快照,`latest.md` 始终实时;0 = 每次都写) |
+| `--verbose` | 打印每次同步明细 |
+
+需要 Node ≥ 23.6(脚本直接执行 TS 源码,零构建依赖)。实时场景下注释可能短暂落后(等模型下次 commit 补齐),但**行号永远是最新的**。
+
+### 11. Token 节省对照(实测)
+
+用本仓库真实源码 + 真实索引跑了 5 个真实编程任务,对比「不用工具读全文」vs「用 `workbench_code_locate` 定位后按行读」(token ≈ 字符数/3,两臂同口径):
+
+| 任务 | 不用工具(读全文) | 用工具(locate+按行) | 节省 |
+|---|---|---|---|
+| 修改 locate 的定位打分逻辑 | 14,260 | 1,229 | **91%** |
+| 调整 BM25 打分 termScore | 2,772 | 646 | 77% |
+| 给 commitIndex 加功能 | 14,260 | 1,587 | 89% |
+| 改客户端 RagPanel 上传逻辑 | 4,247 | 2,298 | 46% |
+| 给 RAG 重建加新参数 | 20,494 | 1,641 | 92% |
+| **合计** | **56,033** | **7,401** | **87%** |
+
+可随时复现:`node scripts/token-compare.mjs --dir <代码目录>`。
+
 ---
 
 ## 🗂️ 仓库结构
@@ -132,7 +227,8 @@ dsh-workbench/
 ├── src/
 │   ├── index.ts            # 宿主入口: 工具 + 机制替换 + 动态 section + RPC + settings
 │   ├── config.ts           # settings 命名空间 schema(schemastery)
-│   ├── search.ts           # BM25 检索引擎(零依赖)
+│   ├── search.ts           # BM25 检索引擎(零依赖; 可选纳入 .workbench/latest.md)
+│   ├── codeindex.ts        # 📇 代码索引: 结构扫描(函数/类/组件行范围) + md 渲染 + locate 定位
 │   ├── embedding.ts        # 向量引擎(OpenAI 兼容端点 + RRF 融合)
 │   ├── mcp.ts              # MCP 连接/测试/自动注册工具
 │   ├── documents.ts        # 文档解析(pdf-parse / txt / md)

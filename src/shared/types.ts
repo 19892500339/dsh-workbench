@@ -77,6 +77,8 @@ export interface WorkflowStepLog {
   label: string
   status: 'ok' | 'skipped' | 'error' | 'running'
   detail: string
+  /** V4.1: full text carried by the `output` node (uncapped), shown expandable in the panel. */
+  full?: string
 }
 
 /** V4: result of a script-mode workflow run (via ctx.workflowEngine). */
@@ -85,6 +87,31 @@ export interface WorkflowScriptResult {
   agentsStarted?: number
   value?: unknown
   stopReason?: string
+  error?: string
+}
+
+/** One projected script-mode progress event (from the engine's workflow/* events). */
+export interface WorkflowProgressEntry {
+  kind: 'phase' | 'log' | 'agent-start' | 'agent-end'
+  /** phase/log text. */
+  text?: string
+  /** agent seq (agent-start / agent-end). */
+  seq?: number
+  /** agent label (agent-start). */
+  label?: string
+  /** agent outcome: completed | failed | cancelled (agent-end). */
+  outcome?: string
+  /** epoch ms of the event. */
+  at: number
+}
+
+/** V4.1: live progress of one script-mode run, polled by the panel. */
+export interface WorkflowProgress {
+  runId: string
+  status: 'running' | 'completed' | 'cancelled' | 'error'
+  agentsStarted: number
+  entries: WorkflowProgressEntry[]
+  value?: unknown
   error?: string
 }
 
@@ -168,6 +195,24 @@ export interface MechanismOverrides {
   workflow: OverrideMode
 }
 
+/** V6: preset auto-configure → verify → GitHub publish pipeline settings. */
+export interface PublishSettings {
+  /** Master switch for the whole pipeline. */
+  enabled: boolean
+  /** Agent-preset id the plugin bundles and auto-configures (default workbench). */
+  presetId: string
+  /** GitHub repository to upload (overwrite) the plugin workspace into. */
+  repo: string
+  /** Remote branch to push. */
+  branch: string
+  /** Upload to GitHub automatically after verification (owner worktree only). */
+  autoPush: boolean
+  /** Last pipeline run result (recorded by the host on each activation). */
+  lastStatus: string
+  /** Epoch ms of the last pipeline run. */
+  lastAt: number
+}
+
 /** The complete persisted workbench state (settings view). */
 export interface WorkbenchState {
   rag: {
@@ -197,6 +242,10 @@ export interface WorkbenchState {
   skillToggles: Record<string, boolean>
   /** V3: mechanism replacement switches (default = DSH original behavior). */
   overrides: MechanismOverrides
+  /** V5: directories whose `.workbench` indexes the host auto-maintains. */
+  indexWatchDirs: string[]
+  /** V6: preset auto-configure → verify → GitHub publish pipeline. */
+  publish: PublishSettings
 }
 
 /** V2: live connection status of one MCP server (tools registered on ctx.tools). */

@@ -14,6 +14,7 @@ import type {
   StateSnapshot,
   WorkbenchState,
   WorkflowDefinition,
+  WorkflowProgress,
   WorkflowScriptResult,
   WorkflowStepLog,
 } from './shared/types.js'
@@ -51,6 +52,10 @@ export interface WorkbenchRuntime {
   runWorkflow(id: string, inputs: Record<string, string>, sessionId?: string): Promise<WorkflowStepLog[]>
   /** V4: script-mode run through the DSH workflowEngine (same engine as the `workflow` tool). */
   runScript(id: string, inputs: Record<string, string>, sessionId?: string): Promise<WorkflowScriptResult>
+  /** V4.1: live progress of one script-mode run (polled by the panel). */
+  scriptProgress(runId: string): Promise<WorkflowProgress>
+  /** V4.1: cancel a running script-mode workflow by run id. */
+  cancelScript(runId: string): Promise<{ cancelled: boolean }>
   /** V3: mark the workflow the model should execute under the workflow mechanism. */
   activateWorkflow(id: string): Promise<SettingsView>
   /** The built-in starter templates (for restoring after deletion). */
@@ -171,6 +176,10 @@ export async function dispatch(runtime: WorkbenchRuntime, method: string, payloa
         p['sessionId'] === undefined ? undefined : str(p['sessionId'], 'sessionId'),
       )
     }
+    case 'workflow.progress':
+      return runtime.scriptProgress(str(p['runId'], 'runId'))
+    case 'workflow.cancel':
+      return runtime.cancelScript(str(p['runId'], 'runId'))
     case 'workflow.activate':
       return runtime.activateWorkflow(str(p['id'], 'id'))
     case 'workflow.templates':
