@@ -3,6 +3,7 @@
  * 不再让整个工作台页签(甚至整个应用树)白屏卸载。
  */
 import React from 'react'
+import { palette } from './ui.js'
 
 interface ErrorBoundaryProps {
   children: React.ReactNode
@@ -27,14 +28,14 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   override render(): React.ReactNode {
     if (this.state.error) {
       return (
-        <div style={{ border: '1px solid #e2544d', background: '#2a1718', borderRadius: 8, padding: 12, fontSize: 12, color: '#e2544d' }}>
+        <div style={{ border: `1px solid ${palette.danger}`, background: palette.dangerBg, borderRadius: 8, padding: 12, fontSize: 12, color: palette.danger }}>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>
             {this.props.label ?? '组件'}渲染异常
           </div>
           <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{this.state.error.message}</div>
           <button
             onClick={() => this.setState({ error: null })}
-            style={{ marginTop: 8, background: '#171b22', border: '1px solid #2a3140', color: '#dbe2ee', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}
+            style={{ marginTop: 8, background: palette.panel, border: `1px solid ${palette.border}`, color: palette.text, borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}
           >
             重试
           </button>

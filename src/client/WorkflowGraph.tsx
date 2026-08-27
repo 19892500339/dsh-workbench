@@ -14,6 +14,9 @@ import React from 'react'
 import LogicFlowDefault, { RectNode, RectNodeModel, h } from '@logicflow/core'
 import type { ToolView, SkillView, WorkflowNode } from '../shared/types.js'
 import { t, useLocale } from './i18n.js'
+import { palette } from './ui.js'
+import { resolveCanvasTheme, useThemeVersion } from './theme.js'
+import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /**
  * Interop guard: in a CJS client bundle rolldown's node-mode interop can bind
@@ -38,6 +41,18 @@ export interface WorkflowGraphProps {
 }
 
 const NODE_GAP = 90
+
+/** Live canvas palette, refreshed before each LogicFlow render (see below). */
+let canvasTheme = resolveCanvasTheme()
+
+/** Apply the edge color to a LogicFlow instance from the resolved theme. */
+function applyEdgeTheme(lf: InstanceType<typeof LogicFlowDefault>): void {
+  lf.setTheme({
+    line: { stroke: canvasTheme.border, strokeWidth: 2 },
+    polyline: { stroke: canvasTheme.border, strokeWidth: 2 },
+    bezier: { stroke: canvasTheme.border, strokeWidth: 2 },
+  })
+}
 
 const KIND_COLOR: Record<WorkflowNode['kind'], string> = {
   prompt: '#3f6fe0',
@@ -66,8 +81,8 @@ class WbNodeModel extends RectNodeModel {
     const kind = (this.properties as { kind?: string }).kind
     const color = (kind && KIND_COLOR[kind as WorkflowNode['kind']]) || KIND_COLOR.prompt
     const selected = Boolean((this.properties as { selected?: boolean }).selected)
-    this.fill = selected ? '#233252' : '#1b2230'
-    this.stroke = selected ? '#4d7cfe' : color
+    this.fill = selected ? canvasTheme.selected : canvasTheme.panel
+    this.stroke = selected ? canvasTheme.accent : color
     this.strokeWidth = 2
     this.radius = 8
     // 故意不设置 this.text: LogicFlow 基类会额外渲染一层 text,
@@ -108,7 +123,7 @@ class WbNodeView extends RectNode {
       h('text', {
         x,
         y: y - 7,
-        fill: '#dbe2ee',
+        fill: canvasTheme.text,
         'font-size': 12,
         'font-weight': 600,
         'text-anchor': 'middle',
@@ -118,7 +133,7 @@ class WbNodeView extends RectNode {
         ? h('text', {
             x,
             y: y + 15,
-            fill: '#8b94a7',
+            fill: canvasTheme.dim,
             'font-size': 10,
             'text-anchor': 'middle',
             'dominant-baseline': 'middle',
@@ -142,22 +157,24 @@ function NodeEditor(props: {
   const params = (next: Record<string, string>) => patch({ params: next })
 
   const inputStyle: React.CSSProperties = {
-    background: '#1d222b', border: '1px solid #2a3140', color: '#dbe2ee',
+    background: palette.panelAlt, border: `1px solid ${palette.border}`, color: palette.text,
     borderRadius: 6, padding: '5px 8px', fontSize: 12, fontFamily: 'inherit',
     width: '100%', boxSizing: 'border-box', marginBottom: 6, outline: 'none',
   }
-  const labelStyle: React.CSSProperties = { fontSize: 11, color: '#8b94a7', display: 'block', marginBottom: 3 }
+  const labelStyle: React.CSSProperties = { fontSize: 11, color: palette.dim, display: 'block', marginBottom: 3 }
 
   return (
     <div style={{
-      border: '1px solid #2a3140', borderRadius: 8, background: '#171b22',
+      border: `1px solid ${palette.border}`, borderRadius: 8, background: palette.panel,
       padding: 10, marginTop: 10, minWidth: 240,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: '#dbe2ee' }}>{t('wfEditNode')}</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: palette.text }}>{t('wfEditNode')}</span>
         <span style={{ fontSize: 11, color: KIND_COLOR[node.kind] }}>{node.kind}</span>
         <span style={{ marginLeft: 'auto' }}>
-          <button onClick={onClose} style={panelButtonStyle}>{t('close')}</button>
+          <button onClick={onClose} style={{ ...panelButtonStyle, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <IconCloseOutline16 size={14} />{t('close')}
+          </button>
         </span>
       </div>
 
@@ -240,6 +257,7 @@ function NodeEditor(props: {
 
 export function WorkflowGraph(props: WorkflowGraphProps) {
   useLocale()
+  const themeVersion = useThemeVersion()
   const { nodes, selectedId, onSelect, onChange, onAddNode, onUpdateNode, tools = [], skills = [] } = props
   const containerRef = React.useRef<HTMLDivElement | null>(null)
   const lfRef = React.useRef<InstanceType<typeof LogicFlowDefault> | null>(null)
@@ -285,6 +303,8 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
     const container = containerRef.current
     if (!container) return
 
+    canvasTheme = resolveCanvasTheme()
+
     const lf = new LogicFlowCtor({
       container,
       width: container.clientWidth || 640,
@@ -296,14 +316,12 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
       // their own labels (no `text`), so the TextEditTool would pop an input
       // over the graph and hide everything. Editing happens in the side panel.
       textEdit: false,
-      background: { color: '#0d1117' },
+      // The container div supplies the themed background; keep LogicFlow's own
+      // background layer transparent so light/dark follows the CSS variable.
+      background: { background: 'transparent' },
     })
     lf.register({ type: 'wbNode', view: WbNodeView, model: WbNodeModel })
-    lf.setTheme({
-      line: { stroke: '#2a3140', strokeWidth: 2 },
-      polyline: { stroke: '#2a3140', strokeWidth: 2 },
-      bezier: { stroke: '#2a3140', strokeWidth: 2 },
-    })
+    applyEdgeTheme(lf)
     lfRef.current = lf
 
     const orderByPositions = () => {
@@ -370,6 +388,9 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
   const idKey = nodes.map((n) => n.id).join(',')
   React.useEffect(() => {
     if (draggingRef.current || !lfRef.current) return
+    // Refresh resolved tokens so SVG node/edge colors track the host theme.
+    canvasTheme = resolveCanvasTheme()
+    applyEdgeTheme(lfRef.current)
     const pos = positionsRef.current
     const graphNodes = nodes.map((n, i) => ({
       id: n.id,
@@ -386,7 +407,7 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
     }))
     lfRef.current.render({ nodes: graphNodes, edges: graphEdges })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idKey, selectedId, nodes])
+  }, [idKey, selectedId, nodes, themeVersion])
 
   function deleteSelected() {
     if (!selectedId) return
@@ -408,10 +429,10 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
             {k.label}
           </button>
         ))}
-        <button style={{ ...panelButtonStyle, color: '#e2544d' }} onClick={deleteSelected} disabled={!selectedId}>
+        <button style={{ ...panelButtonStyle, color: palette.danger }} onClick={deleteSelected} disabled={!selectedId}>
           {t('wfDeleteNode')}
         </button>
-        <div style={{ fontSize: 11, color: '#8b94a7', marginTop: 4 }}>
+        <div style={{ fontSize: 11, color: palette.dim, marginTop: 4 }}>
           {t('wfEditHint')}
         </div>
         {selectedNode && (
@@ -437,9 +458,9 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
             top: 8,
             right: 8,
             zIndex: 10,
-            background: 'rgba(23,27,34,0.9)',
-            border: '1px solid #2a3140',
-            color: '#dbe2ee',
+            background: palette.panel,
+            border: `1px solid ${palette.border}`,
+            color: palette.text,
             borderRadius: 6,
             padding: '4px 10px',
             fontSize: 12,
@@ -457,19 +478,19 @@ export function WorkflowGraph(props: WorkflowGraphProps) {
 /** Inline (embedded) canvas container. */
 const normalStyle: React.CSSProperties = {
   height: 380,
-  border: '1px solid #2a3140',
+  border: `1px solid ${palette.border}`,
   borderRadius: 8,
   overflow: 'hidden',
-  background: '#0d1117',
+  background: palette.bg,
 }
 
 /** Fullscreen canvas container filling the viewport (left panel stays). */
 const fullscreenCanvasStyle: React.CSSProperties = {
   height: 'calc(100vh - 24px)',
-  border: '1px solid #2a3140',
+  border: `1px solid ${palette.border}`,
   borderRadius: 8,
   overflow: 'hidden',
-  background: '#0d1117',
+  background: palette.bg,
 }
 
 /** Fullscreen outer layout covering the viewport with the node panel intact. */
@@ -477,7 +498,7 @@ const fullscreenLayoutStyle: React.CSSProperties = {
   position: 'fixed',
   inset: 0,
   zIndex: 9999,
-  background: '#0f1217',
+  background: palette.bg,
   padding: 12,
   boxSizing: 'border-box',
   display: 'flex',
@@ -485,10 +506,10 @@ const fullscreenLayoutStyle: React.CSSProperties = {
 }
 
 const panelButtonStyle: React.CSSProperties = {
-  background: '#171b22',
-  border: '1px solid #2a3140',
+  background: palette.panel,
+  border: `1px solid ${palette.border}`,
   borderLeftWidth: 3,
-  color: '#dbe2ee',
+  color: palette.text,
   borderRadius: 6,
   padding: '8px 10px',
   fontSize: 12,

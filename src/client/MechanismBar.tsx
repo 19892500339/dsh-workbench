@@ -9,16 +9,23 @@
  */
 import React from 'react'
 import { call } from './api.js'
+import { palette } from './ui.js'
 import { t, useLocale } from './i18n.js'
 import type { MechanismOverrides, OverrideMode, RagOverrideMode, StateSnapshot } from '../shared/types.js'
+import {
+  IconBranchOutline16,
+  IconCordisPluginOutline14,
+  IconDataOutline16,
+  IconSkillOutline16,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 
 type Domain = keyof MechanismOverrides
 
-const DOMAINS: Array<{ key: Domain; titleKey: string; icon: string }> = [
-  { key: 'rag', titleKey: 'ragTitle', icon: '📚' },
-  { key: 'tools', titleKey: 'toolsTitle', icon: '🛠️' },
-  { key: 'skills', titleKey: 'skillsTitle', icon: '🧩' },
-  { key: 'workflow', titleKey: 'workflowTitle', icon: '🔄' },
+const DOMAINS: Array<{ key: Domain; titleKey: string; icon: React.ReactNode }> = [
+  { key: 'rag', titleKey: 'ragTitle', icon: <IconDataOutline16 size={14} /> },
+  { key: 'tools', titleKey: 'toolsTitle', icon: <IconCordisPluginOutline14 size={14} /> },
+  { key: 'skills', titleKey: 'skillsTitle', icon: <IconSkillOutline16 size={14} /> },
+  { key: 'workflow', titleKey: 'workflowTitle', icon: <IconBranchOutline16 size={14} /> },
 ]
 
 const OPTIONS: Record<Domain, Array<{ mode: string; titleKey: string; descKey: string }>> = {
@@ -128,8 +135,13 @@ export function MechanismBar(): React.ReactElement | null {
             key={d.key}
             disabled={busy}
             onClick={() => setOpenDomain(openDomain === d.key ? null : d.key)}
-            title={`${d.icon} ${t(d.titleKey)}${active ? t('mechActive') : t('mechDefault')}`}
-            style={{ ...iconBtn, background: active ? '#4d7cfe' : 'transparent', borderColor: active ? '#4d7cfe' : '#2a3140' }}
+            title={`${t(d.titleKey)}${active ? t('mechActive') : t('mechDefault')}`}
+            style={{
+              ...iconBtn,
+              background: active ? palette.accent : 'transparent',
+              borderColor: active ? palette.accent : palette.border,
+              color: active ? palette.accentText : palette.text,
+            }}
           >
             {d.icon}
           </button>
@@ -141,7 +153,7 @@ export function MechanismBar(): React.ReactElement | null {
           <div style={popTitle}>
             {DOMAINS.find((d) => d.key === openDomain)?.icon} {t(DOMAINS.find((d) => d.key === openDomain)!.titleKey)}
             {openDomain === 'workflow' && activeWorkflow ? (
-              <span style={{ color: '#8b94a7', fontWeight: 400 }}> · {t('wfActive')} {activeWorkflow.name}</span>
+              <span style={{ color: palette.dim, fontWeight: 400 }}> · {t('wfActive')} {activeWorkflow.name}</span>
             ) : null}
           </div>
           {OPTIONS[openDomain].map((opt) => {
@@ -153,40 +165,40 @@ export function MechanismBar(): React.ReactElement | null {
                 onClick={() => void choose(openDomain, opt.mode as OverrideMode & RagOverrideMode)}
                 style={{
                   ...popItem,
-                  background: selected ? '#233252' : 'transparent',
-                  border: `1px solid ${selected ? '#4d7cfe' : 'transparent'}`,
+                  background: selected ? palette.selectedBg : 'transparent',
+                  border: `1px solid ${selected ? palette.accent : 'transparent'}`,
                 }}
               >
                 <span style={{ flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: 12 }}>{selected ? '● ' : '○ '}{t(opt.titleKey)}</div>
-                  <div style={{ color: '#8b94a7', fontSize: 11, marginTop: 2 }}>{t(opt.descKey)}</div>
+                  <div style={{ color: palette.dim, fontSize: 11, marginTop: 2 }}>{t(opt.descKey)}</div>
                 </span>
               </button>
             )
           })}
           {openDomain === 'rag' && overrides.rag === 'workbench' && (
-            <div style={{ borderTop: `1px solid #2a3140`, marginTop: 6, paddingTop: 6 }}>
-              <div style={{ fontSize: 11, color: '#8b94a7', padding: '2px 8px' }}>{t('ragTarget')}</div>
+            <div style={{ borderTop: `1px solid ${palette.border}`, marginTop: 6, paddingTop: 6 }}>
+              <div style={{ fontSize: 11, color: palette.dim, padding: '2px 8px' }}>{t('ragTarget')}</div>
               <button
                 disabled={busy}
                 onClick={() => void pickRagTarget('')}
-                style={{ ...popItem, color: snapshot!.value.rag.ragTargetKbId === '' ? '#4d7cfe' : '#dbe2ee' }}
+                style={{ ...popItem, color: snapshot!.value.rag.ragTargetKbId === '' ? palette.accent : palette.text }}
               >
                 {snapshot!.value.rag.ragTargetKbId === '' ? '● ' : '○ '}{t('ragTargetDefault')}
               </button>
               {(snapshot?.value.rag.knowledgeBases ?? []).map((kb) => {
                 const sel = snapshot!.value.rag.ragTargetKbId === kb.id
                 return (
-                  <button key={kb.id} disabled={busy} onClick={() => void pickRagTarget(kb.id)} style={{ ...popItem, color: sel ? '#4d7cfe' : '#dbe2ee' }}>
+                  <button key={kb.id} disabled={busy} onClick={() => void pickRagTarget(kb.id)} style={{ ...popItem, color: sel ? palette.accent : palette.text }}>
                     {sel ? '● ' : '○ '}{kb.name}
-                    <span style={{ color: '#8b94a7', marginLeft: 6 }}>{kb.path}</span>
+                    <span style={{ color: palette.dim, marginLeft: 6 }}>{kb.path}</span>
                   </button>
                 )
               })}
             </div>
           )}
           {overrides[openDomain] !== 'default' && (
-            <button disabled={busy} onClick={() => void resetDomain(openDomain)} style={{ ...popItem, color: '#e2544d' }}>
+            <button disabled={busy} onClick={() => void resetDomain(openDomain)} style={{ ...popItem, color: palette.danger }}>
               {t('restoreDomain')}
             </button>
           )}
@@ -199,13 +211,14 @@ export function MechanismBar(): React.ReactElement | null {
 const iconBtn: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
-  border: '1px solid #2a3140',
+  border: `1px solid ${palette.border}`,
   borderRadius: 6,
   padding: '3px 8px',
   fontSize: 12,
   lineHeight: 1,
   cursor: 'pointer',
   fontFamily: 'inherit',
+  color: palette.text,
 }
 
 const popover: React.CSSProperties = {
@@ -214,17 +227,17 @@ const popover: React.CSSProperties = {
   left: 0,
   width: 300,
   zIndex: 1000,
-  background: '#171b22',
-  border: '1px solid #2a3140',
+  background: palette.panel,
+  border: `1px solid ${palette.border}`,
   borderRadius: 8,
-  boxShadow: '0 6px 24px rgba(0,0,0,.5)',
+  boxShadow: 'var(--dsw-shadow-lv3)',
   padding: 6,
 }
 
 const popTitle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 600,
-  color: '#dbe2ee',
+  color: palette.text,
   padding: '4px 8px',
   display: 'flex',
   gap: 6,
@@ -239,6 +252,6 @@ const popItem: React.CSSProperties = {
   fontSize: 12,
   cursor: 'pointer',
   fontFamily: 'inherit',
-  color: '#dbe2ee',
+  color: palette.text,
   marginBottom: 2,
 }

@@ -96,7 +96,7 @@ export function PromptPanel(props: PanelProps) {
             {recent.map((p) => (
               <button
                 key={p.id}
-                style={{ ...styles.button, flex: '1 1 180px', textAlign: 'left', background: p.id === activeId ? palette.accent : palette.panelAlt, color: p.id === activeId ? '#fff' : palette.text }}
+                style={{ ...styles.button, flex: '1 1 180px', textAlign: 'left', background: p.id === activeId ? palette.accent : palette.panelAlt, color: p.id === activeId ? palette.accentText : palette.text }}
                 onClick={() => void activate(p.id)}
                 title={p.content.slice(0, 80)}
               >

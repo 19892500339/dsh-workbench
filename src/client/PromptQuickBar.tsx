@@ -7,8 +7,10 @@
  */
 import React from 'react'
 import { call } from './api.js'
+import { palette } from './ui.js'
 import { t, useLocale } from './i18n.js'
 import type { StateSnapshot } from '../shared/types.js'
+import { IconListPenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export function PromptQuickBar(): React.ReactElement | null {
   useLocale()
@@ -77,28 +79,33 @@ export function PromptQuickBar(): React.ReactElement | null {
       <button
         onClick={() => setOpen((v) => !v)}
         title={activeId ? t('promptSwitch') : t('promptPick')}
-        style={{ ...iconBtn, background: activeId ? '#3a5c9e' : 'transparent', borderColor: activeId ? '#3a5c9e' : '#2a3140' }}
+        style={{
+          ...iconBtn,
+          background: activeId ? palette.accent : 'transparent',
+          borderColor: activeId ? palette.accent : palette.border,
+          color: activeId ? palette.accentText : palette.text,
+        }}
       >
-        📝{activeId ? '●' : ''}
+        <IconListPenOutline16 size={14} />{activeId ? '●' : ''}
       </button>
       {open && (
         <div style={popover}>
           <div style={popTitle}>{t('promptPicker')}</div>
           {activePrompt && (
-            <div style={{ border: '1px solid #2f5d50', background: '#14211d', borderRadius: 6, padding: 8, marginBottom: 6 }}>
-              <div style={{ color: '#3fb96f', fontWeight: 600, fontSize: 12, marginBottom: 4 }}>
+            <div style={{ border: '1px solid var(--dsw-alias-state-success-primary)', background: 'var(--dsw-alias-state-success-tertiary)', borderRadius: 6, padding: 8, marginBottom: 6 }}>
+              <div style={{ color: palette.ok, fontWeight: 600, fontSize: 12, marginBottom: 4 }}>
                 {t('promptActive')} {activePrompt.name}
               </div>
-              <pre style={{ margin: 0, color: '#9fb8ae', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 160, overflowY: 'auto' }}>
+              <pre style={{ margin: 0, color: palette.dim, fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 160, overflowY: 'auto' }}>
                 {injectedPreview(activePrompt)}
               </pre>
-              <div style={{ color: '#8b94a7', fontSize: 10, marginTop: 4 }}>
+              <div style={{ color: palette.dim, fontSize: 10, marginTop: 4 }}>
                 {t('promptInjectedNote')}
               </div>
             </div>
           )}
           {recent.length === 0 && (
-            <div style={{ color: '#8b94a7', padding: '6px 10px', fontSize: 12 }}>
+            <div style={{ color: palette.dim, padding: '6px 10px', fontSize: 12 }}>
               {t('promptEmpty')}
             </div>
           )}
@@ -107,14 +114,14 @@ export function PromptQuickBar(): React.ReactElement | null {
               key={p.id}
               disabled={busy}
               onClick={() => void pick(p.id)}
-              style={{ ...popItem, background: p.id === activeId ? '#233252' : 'transparent' }}
+              style={{ ...popItem, background: p.id === activeId ? palette.selectedBg : 'transparent' }}
             >
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-              {p.id === activeId && <span style={{ color: '#3fb96f' }}>{t('ppActive')}</span>}
+              {p.id === activeId && <span style={{ color: palette.ok }}>{t('ppActive')}</span>}
             </button>
           ))}
           {activeId ? (
-            <button disabled={busy} onClick={() => void clear()} style={{ ...popItem, color: '#e2544d' }}>
+            <button disabled={busy} onClick={() => void clear()} style={{ ...popItem, color: palette.danger }}>
               {t('promptClear')}
             </button>
           ) : null}
@@ -133,13 +140,14 @@ function injectedPreview(p: { name: string; content: string }): string {
 const iconBtn: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
-  border: '1px solid #2a3140',
+  border: `1px solid ${palette.border}`,
   borderRadius: 6,
   padding: '3px 8px',
   fontSize: 12,
   lineHeight: 1,
   cursor: 'pointer',
   fontFamily: 'inherit',
+  color: palette.text,
 }
 
 const popover: React.CSSProperties = {
@@ -148,16 +156,16 @@ const popover: React.CSSProperties = {
   left: 0,
   width: 260,
   zIndex: 1000,
-  background: '#171b22',
-  border: '1px solid #2a3140',
+  background: palette.panel,
+  border: `1px solid ${palette.border}`,
   borderRadius: 8,
-  boxShadow: '0 6px 24px rgba(0,0,0,.5)',
+  boxShadow: 'var(--dsw-shadow-lv3)',
   padding: 6,
 }
 
 const popTitle: React.CSSProperties = {
   fontSize: 11,
-  color: '#8b94a7',
+  color: palette.dim,
   padding: '4px 8px',
 }
 
@@ -169,7 +177,7 @@ const popItem: React.CSSProperties = {
   textAlign: 'left',
   border: 'none',
   background: 'transparent',
-  color: '#dbe2ee',
+  color: palette.text,
   borderRadius: 6,
   padding: '6px 8px',
   fontSize: 12,

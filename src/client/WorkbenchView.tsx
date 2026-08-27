@@ -14,16 +14,24 @@ import { ToolPanel } from './modules/ToolPanel.js'
 import { PromptPanel } from './modules/PromptPanel.js'
 import type { StateSnapshot } from '../shared/types.js'
 import { t, useLocale } from './i18n.js'
+import {
+  IconApiOutline14,
+  IconBranchOutline16,
+  IconCordisPluginOutline14,
+  IconDataOutline16,
+  IconListPenOutline16,
+  IconSkillOutline16,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 
 type ModuleId = 'rag' | 'mcp' | 'workflow' | 'skill' | 'tool' | 'prompt'
 
-const MODULES: Array<{ id: ModuleId; labelKey: string; icon: string; hintKey: string }> = [
-  { id: 'rag', labelKey: 'navRag', icon: '📚', hintKey: 'navRagHint' },
-  { id: 'mcp', labelKey: 'navMcp', icon: '🔌', hintKey: 'navMcpHint' },
-  { id: 'workflow', labelKey: 'navWorkflow', icon: '🔄', hintKey: 'navWorkflowHint' },
-  { id: 'skill', labelKey: 'navSkills', icon: '🧩', hintKey: 'navSkillsHint' },
-  { id: 'tool', labelKey: 'navTools', icon: '🛠️', hintKey: 'navToolsHint' },
-  { id: 'prompt', labelKey: 'navPrompt', icon: '📝', hintKey: 'navPromptHint' },
+const MODULES: Array<{ id: ModuleId; labelKey: string; icon: React.ReactNode; hintKey: string }> = [
+  { id: 'rag', labelKey: 'navRag', icon: <IconDataOutline16 size={16} />, hintKey: 'navRagHint' },
+  { id: 'mcp', labelKey: 'navMcp', icon: <IconApiOutline14 size={16} />, hintKey: 'navMcpHint' },
+  { id: 'workflow', labelKey: 'navWorkflow', icon: <IconBranchOutline16 size={16} />, hintKey: 'navWorkflowHint' },
+  { id: 'skill', labelKey: 'navSkills', icon: <IconSkillOutline16 size={16} />, hintKey: 'navSkillsHint' },
+  { id: 'tool', labelKey: 'navTools', icon: <IconCordisPluginOutline14 size={16} />, hintKey: 'navToolsHint' },
+  { id: 'prompt', labelKey: 'navPrompt', icon: <IconListPenOutline16 size={16} />, hintKey: 'navPromptHint' },
 ]
 
 export function WorkbenchView(props: { sessionId?: string }) {

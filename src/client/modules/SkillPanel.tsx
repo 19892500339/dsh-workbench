@@ -5,7 +5,7 @@
  */
 import React from 'react'
 import { call, errorMessage } from '../api.js'
-import { Section, Field, Button, Empty, ErrorNote, Toggle, styles, okNote } from '../ui.js'
+import { Section, Field, Button, Empty, ErrorNote, Toggle, styles, okNote, palette } from '../ui.js'
 import { t, useLocale } from '../i18n.js'
 import type { StateSnapshot } from '../../shared/types.js'
 
@@ -56,16 +56,16 @@ export function SkillPanel(props: PanelProps) {
         {note && <div style={{ marginBottom: 8 }}>{okNote(note)}</div>}
         {skills.length === 0 && <Empty text={t('skEmpty')} />}
         {skills.map((s) => (
-          <div key={s.name} style={{ padding: '8px 0', borderBottom: '1px solid #2a3140' }}>
+          <div key={s.name} style={{ padding: '8px 0', borderBottom: `1px solid ${palette.border}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <strong style={{ fontSize: 13 }}>{s.name}</strong>
-              <span style={{ fontSize: 11, color: '#8b94a7' }}>{t('skProvider')} {s.provider}</span>
+              <span style={{ fontSize: 11, color: palette.dim }}>{t('skProvider')} {s.provider}</span>
               <span style={{ marginLeft: 'auto' }}>
                 <Toggle checked={toggles[s.name] ?? false} onChange={(next) => void toggle(s.name, next)} label={t('skFollow')} />
               </span>
             </div>
-            <div style={{ fontSize: 12, color: '#8b94a7', marginTop: 2 }}>{s.description}</div>
-            {s.whenToUse && <div style={{ fontSize: 11, color: '#e2b93b', marginTop: 2 }}>{t('skWhenUse')} {s.whenToUse}</div>}
+            <div style={{ fontSize: 12, color: palette.dim, marginTop: 2 }}>{s.description}</div>
+            {s.whenToUse && <div style={{ fontSize: 11, color: palette.warn, marginTop: 2 }}>{t('skWhenUse')} {s.whenToUse}</div>}
           </div>
         ))}
       </Section>

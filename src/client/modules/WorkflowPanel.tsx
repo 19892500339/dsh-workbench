@@ -296,7 +296,7 @@ export function WorkflowPanel(props: PanelProps) {
         {workflows.map((w) => (
           <div key={w.id} style={{ ...styles.row, marginBottom: 4 }}>
             <button
-              style={{ ...styles.button, flex: 1, textAlign: 'left', background: w.id === selectedId ? palette.accent : palette.panelAlt, color: w.id === selectedId ? '#fff' : palette.text, borderColor: w.id === selectedId ? palette.accent : palette.border }}
+              style={{ ...styles.button, flex: 1, textAlign: 'left', background: w.id === selectedId ? palette.accent : palette.panelAlt, color: w.id === selectedId ? palette.accentText : palette.text, borderColor: w.id === selectedId ? palette.accent : palette.border }}
               onClick={() => select(w.id)}
             >
               <strong>{w.name}</strong>

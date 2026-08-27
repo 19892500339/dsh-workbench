@@ -1,39 +1,87 @@
-# dsh-workbench
+# 🛠️ dsh-workbench
 
-<div align="left">
+> **A visual control room for your agent** — RAG · MCP · Workflows · Skills · Tools · Prompts, orchestrated in one tab, right inside [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
-**🌐 Language / 语言:** [English](README.md) · [中文](README.zh.md)
+<div align="center">
 
-[![English](https://img.shields.io/badge/Language-English-blue.svg)](README.md) [![中文](https://img.shields.io/badge/Language-中文-red.svg)](README.zh.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-plugin-4d7cfe.svg)](https://github.com/deepseek-ai/deepseek-harness)
+[![Node](https://img.shields.io/badge/Node-%3E%3D20-339933.svg)](#-development)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
+[![中文](https://img.shields.io/badge/中文-README-red.svg)](README.zh.md)
 
 </div>
 
-> Visual orchestration workbench for agent capabilities · A hybrid plugin (client UI + server tool) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+DeepSeek Harness gives your model superpowers — but configuring them usually means digging through files, yaml and docs. **dsh-workbench** turns the six core agent capabilities into a **visual, clickable control room**: a dedicated **Workbench tab** next to Chat / Trajectory, plus **mechanism switches inside the composer** that swap DSH's own behavior for your workbench configuration — with one-click restore.
 
-Adds a **「工作台 / Workbench」tab** to the conversation view ring (beside Chat / Trajectory) and turns the six agent capabilities — **RAG · MCP · Workflow · Skills · Tools · Prompt** — into a visual, dynamically editable panel. It also registers a `workbench_search` retrieval tool, and provides **mechanism switches inside the composer** that temporarily replace DSH's own mechanisms with workbench content — with one-click restore.
-
-The whole UI **follows DSH's interface language automatically (中文 / English)**.
+It speaks your language (**zh / EN, auto-synced with DSH**) and wears DSH's own design tokens, so it **follows the host light / dark / system theme** and looks native from day one.
 
 ---
 
-## ✨ Feature overview
+## ✨ Why dsh-workbench?
 
-| Module | Visual operations | Backing mechanism |
+| 😩 Without it | 🎉 With it |
+|---|---|
+| RAG tuning = editing settings yaml & rebuilding indexes by hand | Point, upload, chunk, engine, rebuild — all in panels |
+| MCP servers = CLI incantations, tools invisible | Add a server, flip a switch, **tools auto-register** and appear in the model's toolset |
+| Workflows = JSON editing blind | Drag nodes on a **LogicFlow canvas**, reorder by dragging, run dry-runs with step logs |
+| Skills / tools / prompts = scattered configs | One tab to browse, import, toggle and activate everything |
+| Model can't find the right file → burns tokens re-reading whole repos | **`.workbench` code index** — the model locates code by line, saving **up to 87% of tokens** |
+
+All configuration persists through the host `settings` service (`~/.dsh/settings.yaml` by default) and survives restarts.
+
+---
+
+## 🧩 Feature matrix
+
+| Module | What you can do | Backing mechanism |
 |---|---|---|
-| 📚 RAG | multi knowledge bases (folders) / upload documents (pdf·txt·md) / chunk params / engine (**bm25 \| vector \| hybrid**) / embeddings endpoint / per-KB rebuild & search | built-in BM25 + original vector engine (RRF fusion) + `workbench_search` tool (supports `kb_id`) |
-| 🔌 MCP | server CRUD (`url` or `command`/`args`/`env`/`headers`) / enable toggle / connect test / **auto-registers `wb_mcp__*` tools on ctx.tools when enabled** | `@modelcontextprotocol/sdk` dynamic connect + `ctx.tools.register` (coexists with the official `mcp__*` bridge) |
-| 🔄 Workflow | built-in templates / **LogicFlow drag canvas** (fullscreen, live reorder & re-chain) / form node editor / dry-run with step logs | deterministic dry-run executor; LLM runtime execution is a V3 follow-up |
-| 🧩 Skills | list installed skills / import a local `SKILL.md` / follow toggles | `ctx.skills` registry + `~/.dsh/skills/` import |
-| 🛠️ Tools | **all DSH tools** (incl. hidden ones) / test-call with JSON args / "hide from model" runtime toggle | `ctx.tools` registry + `ctx.tools.restrict({ deny })` — effective immediately |
-| 📝 Prompt | 8 built-in domain templates / CRUD / `{{var}}` preview / switch active / 📝 picker inside the composer (recent-3 + cancel + injection preview) | host dynamic section `workbench:active-prompt` (empty when inactive, zero context cost) |
+| 📚 **RAG** | Multi knowledge bases (folders) · upload docs (pdf·txt·md, ≤20MB) · chunk params · engine (**bm25 \| vector \| hybrid**) · embeddings endpoint · per-KB rebuild & search | Built-in BM25 + original vector engine (RRF fusion) + `workbench_search` tool (supports `kb_id`) |
+| 🔌 **MCP** | Server CRUD (`url` or `command`/`args`/`env`/`headers`) · enable toggle · connect test · **auto-registers `wb_mcp__*` tools** on `ctx.tools` | `@modelcontextprotocol/sdk` dynamic connect — coexists with the official `mcp__*` bridge |
+| 🔄 **Workflow** | Built-in templates · **LogicFlow drag canvas** (fullscreen, live reorder & re-chaining) · inline node editor · dry-run with step logs · **script mode** (full `workflowEngine` orchestration) | Deterministic dry-run executor + host `workflowEngine` delegation (agent / pipeline / parallel) |
+| 🧩 **Skills** | Browse installed skills · import a local `SKILL.md` into `~/.dsh/skills/` · follow toggles | `ctx.skills` registry |
+| 🛠️ **Tools** | **Every DSH tool** (including hidden ones) · test-call with JSON args · "hide from model" runtime toggle | `ctx.tools` registry + `ctx.tools.restrict({ deny })` — takes effect immediately |
+| 📝 **Prompt** | 8 built-in domain templates · CRUD · `{{var}}` placeholder preview · switch active · 📝 composer picker (recent 3 + cancel + **injection preview**) | Host dynamic section `workbench:active-prompt` — zero context cost when inactive |
+| 📇 **Code index** | Per-directory `.workbench/` index (function blocks → file + start/end lines + comments) · timestamped snapshots + live `latest.md` | Model-driven host tools: `workbench_code_index` (scan/commit), `workbench_code_locate` — locate before reading, **no more whole-file scans** |
 
-**Mechanism switches (inside the composer)**: 📚 RAG (default / custom / pick a KB) · 🛠️ Tools (all visible / filtered) · 🧩 Skills (native / workbench list) · 🔄 Workflow (native / follow active) — plus "restore defaults".
+### 🎛️ Mechanism switches (inside the composer)
 
-All configuration persists through the host `settings` service (default `~/.dsh/settings.yaml`), surviving restarts.
+Click an icon in the input tool row to **replace** DSH's built-in mechanism with your workbench configuration:
+
+- 📚 **RAG** — default / custom / pick a knowledge base
+- 🛠️ **Tools** — full visibility / filtered by hide-toggles
+- 🧩 **Skills** — native / workbench list
+- 🔄 **Workflow** — native / follow the active workflow
+
+"Restore this mechanism" (or "Restore defaults") reverts to DSH instantly — and clears tool/skill hide config.
 
 ---
 
-## 🚀 Install
+## 📇 Code index — the token-saving superpower
+
+Models re-reading entire files to find one function is the biggest hidden token leak. dsh-workbench maintains a **`.workbench/` index per code directory** — compact Markdown mapping every function block to **file + start/end line + a functional comment**. The model:
+
+1. **After writing code** → calls `workbench_code_index` (`scan` → annotate → `commit`) to rebuild the index;
+2. **Before writing code** → calls `workbench_code_locate` to jump straight to the right lines, then reads only those lines.
+
+Measured on this repo's real source (5 real coding tasks):
+
+| Task | Read whole file | Locate + read by line | Saved |
+|---|---|---|---|
+| Tune `locate` scoring | 14,260 tok | 1,229 | **91%** |
+| Tune BM25 `termScore` | 2,772 | 646 | 77% |
+| Extend `commitIndex` | 14,260 | 1,587 | 89% |
+| Fix `RagPanel` upload | 4,247 | 2,298 | 46% |
+| New RAG rebuild param | 20,494 | 1,641 | 92% |
+| **Total** | **56,033** | **7,401** | **87%** |
+
+Reproduce anytime: `node scripts/token-compare.mjs --dir <code-dir>`.
+
+Line numbers stay fresh automatically — either via the built-in watcher (`workbench.indexWatchDirs` in settings) or the standalone `scripts/watch-workbench.mjs` / `scripts/refresh-workbench.mjs` (git hooks, CI, npm scripts — your choice).
+
+---
+
+## 🚀 Quick start
 
 ```sh
 # from npm (once published)
@@ -47,77 +95,44 @@ cd dsh-workbench && npm install && npm run build
 dsh plugin --profile web add link:<absolute path to this repo>
 ```
 
-Hard-refresh the browser (`Ctrl/Cmd + Shift + R`) afterwards — the **工作台 / Workbench** tab appears, and the composer tool row shows 📚🛠️🧩🔄📝 icons.
+Hard-refresh the browser (`Ctrl/Cmd + Shift + R`) → the **Workbench** tab appears, and the composer tool row shows 📚🛠️🧩🔄📝.
 
 ---
 
-## 📚 Tutorial
+## 🖥️ First steps
 
-### 0. The interface
+**① Upload a doc & let the model search it**
+`Workbench → RAG` → Add a KB (name + folder path) → Upload a `.pdf/.txt/.md` → (optional) switch engine to `vector`/`hybrid` + embeddings endpoint → Rebuild. Then click 📚 in the composer → "Workbench knowledge base" → pick a KB → ask your question. The model calls `workbench_search` with the right `kb_id`.
 
-- **Conversation tab bar**: `[Chat] [Trajectory] [Workbench]` — the Workbench tab hosts the six module panels (left nav).
-- **Composer tool row**: `[📎] [🎤] [📚] [🛠️] [🧩] [🔄] [📝]` — the first four are **mechanism switches** (click for a picker), 📝 is the **prompt picker** (recent 3).
+**② Wire up an MCP server in one minute**
+`Workbench → MCP` → Add server (stdio command or http url) → Save → **Enable**. Its tools land on `ctx.tools` as `wb_mcp__*` and show up in `Workbench → Tools`, callable by the model.
 
-### 1. RAG knowledge bases
+**③ Orchestrate a workflow by dragging**
+`Workbench → Workflow` → pick a template (or New) → **🎨 Drag canvas** → add `+ prompt / transform / tool / skill / output` nodes → **drag to reorder** (edges re-chain live) → run a dry-run with step logs → **Activate**, then click 🔄 in the composer → "Follow the active workflow".
 
-1. Open **Workbench → RAG**.
-2. **Add a KB**: name + an absolute folder path → Add. `.md / .txt` files inside are scanned recursively.
-3. **Upload documents**: click "Upload" on a KB row, pick `.pdf / .txt / .md` — parsed, chunked with your chunk params, stored into the KB, and the index is **rebuilt immediately**.
-4. **Vector retrieval (optional)**: in "Retrieval config" switch the engine to `vector` or `hybrid`, fill an OpenAI-compatible `/embeddings` endpoint (OpenAI / DeepSeek / SiliconFlow / local gateway), save and "Rebuild index" — uploaded docs are then vectorized (**vector knowledge base**).
-5. **Search test**: type a query, pick a KB, hit Search.
-6. **Let the model use it**: click 📚 in the composer → "Workbench knowledge base" → pick a target KB (or the default corpus) → send a message; the model calls `workbench_search` with the matching `kb_id`.
+**④ Activate a prompt template**
+`Workbench → Prompt` → pick one of 8 domain templates (or write your own, `{{var}}` supported) → **Activate**. From the next model step the system prompt carries it — the 📝 composer picker shows the **exact injected text** to verify.
 
-> Model tool `workbench_search`: `query` (required), `top_k`, `kb_id` (target KB).
+**⑤ Hide a tool from the model**
+`Workbench → Tools` → toggle "hide" on any tool (works immediately via `ctx.tools.restrict`), untoggle to restore.
 
-### 2. MCP servers
+---
 
-1. **Workbench → MCP → Add server**: name + transport (stdio local / http remote).
-2. stdio: command (e.g. `npx`) + args + env; http: URL + headers.
-3. Save, then **enable**: the host connects and **registers its tools on ctx.tools** (prefix `wb_mcp__`, coexisting with the official `mcp__` bridge); "Test" runs a one-off handshake.
-4. Enabled tools appear in **Workbench → Tools** and are callable by the model.
+## 🏗️ Development
 
-### 3. Workflow orchestration (LogicFlow canvas)
+```sh
+npm install
+npm run build   # tsc declarations + tsdown artifacts (lib/index.js host, lib/client.js client)
+npm test        # engine / vector / prompt unit tests
+npm run typecheck
+```
 
-1. **Workbench → Workflow**: built-in templates are seeded on first boot (resume writer / recruiter screen / plain QA); use "Restore templates" or "New".
-2. Pick a workflow → "🎨 Drag canvas": add nodes from the left panel (`+ prompt / + transform / + tool / + output`); **drag nodes to reorder** (edges update live); the **⛶ Fullscreen** button lets you orchestrate on a big canvas.
-3. "Manual run (dry-run)": fill input vars (`var=value`) → Run → step-by-step log.
-4. Click **Activate** on a workflow, then click 🔄 in the composer → "Follow the active workflow" — the model follows it strictly from the next step.
+The client artifact ships in the DSH web module-loader format (`window.__ModuleLoader__.load({ id: 'dsh-workbench', factory })`).
 
-### 4. Skills
+### 🌐 Internationalization & theming
 
-- **Workbench → Skills**: browse installed skills (name/description/when-to-use).
-- **Import**: a local `SKILL.md` path → copies it into `~/.dsh/skills/`.
-- Composer 🧩 → "Inject workbench skill list": the model uses the workbench list.
-
-### 5. Tools
-
-- **Workbench → Tools**: **all DSH tools** (built-in + `wb_mcp__*` + other plugins), with total/hidden counts.
-- **Test call**: click a tool name → JSON args → Call (still subject to DSH policy/approval).
-- **Hide from model**: toggling hides the tool from the model's visible set (effective when the Tools mechanism is in workbench mode); untoggle restores it.
-
-### 6. Prompt templates
-
-1. **Workbench → Prompt**: 8 built-in domain templates (software eng / code review / translation / data analysis / PM / learning / marketing / general); create/edit/delete, `{{var}}` placeholders preview.
-2. **Activate**: click "Activate" (or pick a recent one in the 📝 picker) — from the next model step, the system prompt includes:
-   ```
-   【生效提示词: name】(以下为当前必须严格遵守的指令…)
-   template body ({{var}} escaped to {var})
-   ```
-3. **Deactivate**: "Deactivate" in the 📝 picker.
-4. **Verify**: the 📝 picker shows the exact injected text ("current active"). Note: DSH's **trajectory view does not render system prompts** (platform behavior) — trust the picker preview and model behavior.
-
-### 7. Mechanism switches (replace / restore)
-
-- Each mechanism defaults to **DSH's original behavior** (no injection).
-- Click a composer icon → pick "workbench" to **replace** it: the host injects a mechanism section via `systemPrompt.section`, which the model reads every step.
-- "Restore this mechanism" (or "Restore defaults") fully reverts to DSH (and clears tool/skill hide config).
-
-### 8. FAQ
-
-- **Activated a prompt but nothing changed?** Injection happens at the **next model step** — send a new message; confirm the 📝 picker shows "active".
-- **No prompt trace in the trajectory?** DSH does not write system prompts into trajectory events — expected; use the 📝 preview.
-- **Language?** Follows DSH's zh/en automatically; no setting needed.
-- **Large uploads?** Single file ≤ 20MB.
+- All UI strings live in `src/client/i18n.ts` (zh/en); the client subscribes to DSH's `locale` service — switch DSH's language, the workbench switches with it, no restart.
+- The whole UI is built on **DSH design tokens** (`var(--dsw-alias-*)`): it follows the host `light` / `dark` / `system` theme and uses DSH's native icon set — zero visual drift.
 
 ---
 
@@ -129,9 +144,10 @@ dsh-workbench/
 ├── cordis.patch.yml        # host row insert (bundle patch)
 ├── tsconfig*.json / tsdown.config.ts
 ├── src/
-│   ├── index.ts            # host entry: tool + mechanism switches + dynamic sections + RPC + settings
+│   ├── index.ts            # host entry: tools + mechanism switches + dynamic sections + RPC + settings
 │   ├── config.ts           # settings namespace schema (schemastery)
 │   ├── search.ts           # BM25 retrieval engine (zero dependencies)
+│   ├── codeindex.ts        # .workbench index: scan → annotate → commit → locate
 │   ├── embedding.ts        # vector engine (OpenAI-compatible endpoint + RRF fusion)
 │   ├── mcp.ts              # MCP connect / test / auto-register tools
 │   ├── documents.ts        # document parsing (pdf-parse / txt / md)
@@ -139,37 +155,23 @@ dsh-workbench/
 │   ├── prompts.ts          # built-in domain templates + injection escaping
 │   ├── api.ts              # /workbench/api prefix route (same-origin + {ok,value})
 │   ├── shared/types.ts     # shared JSON types (host ↔ browser)
-│   └── client/
-│       ├── index.tsx       # client entry: tab + composer switches/picker + i18n
-│       ├── i18n.ts         # zh/en dictionaries, follows the DSH locale
-│       ├── WorkbenchView.tsx / WorkflowGraph.tsx (LogicFlow) / PromptQuickBar / MechanismBar
-│       ├── api.ts / ui.tsx / ErrorBoundary.tsx
-│       └── modules/        # the six module panels
+│   └── client/             # React UI: tab + composer switches/picker + i18n + modules/
+├── scripts/                # watch-workbench / refresh-workbench / token-compare
 └── tests/                  # node --test (BM25 / vector / prompt escaping)
 ```
 
-## 🏗️ Build
-
-```sh
-npm install
-npm run build      # tsc declarations + tsdown artifacts (lib/index.js host, lib/client.js client)
-npm test           # engine / vector / prompt unit tests
-```
-
-The client artifact uses the DSH web module-loader format (`window.__ModuleLoader__.load({ id: 'dsh-workbench', factory })`).
-
-## 🌐 Internationalization
-
-- All UI strings live in `src/client/i18n.ts` (zh/en dictionaries).
-- The client entry subscribes to DSH's `locale` service — switching the DSH UI language (Settings → Language) switches the workbench instantly, no restart.
+---
 
 ## 🧭 Ecosystem position
 
-DSH has single-capability plugins (KB [dsh-kb-sieve](https://github.com/omdsh-dev/dsh-kb-sieve), MCP [dsh-exa-mcp](https://github.com/MicroHEROX/dsh-exa-mcp), skills [dsh-skill-manager](https://github.com/JimmyJin2006/dsh-skill-manager), …), but none collects the six capabilities **plus mechanism replacement** into one conversation tab and composer — that is this plugin's niche. The similarly-named [deepseek-harness-workbench-plugin](https://github.com/loadingvx/deepseek-harness-workbench-plugin) is an IDE-style three-column workbench; the two are complementary.
+DSH has single-capability plugins (KB [dsh-kb-sieve](https://github.com/omdsh-dev/dsh-kb-sieve), MCP [dsh-exa-mcp](https://github.com/MicroHEROX/dsh-exa-mcp), skills [dsh-skill-manager](https://github.com/JimmyJin2006/dsh-skill-manager), …), but none gathers **all six capabilities + mechanism replacement + code indexing** into one conversation tab and composer — that is this plugin's niche. The similarly-named [deepseek-harness-workbench-plugin](https://github.com/loadingvx/deepseek-harness-workbench-plugin) is an IDE-style three-column workbench; the two are complementary.
 
-## 🧾 License & compliance
+---
 
-- Original implementation, MIT. No third-party code is pasted; references are credited in comments only.
-- Runtime dependencies are declared in `package.json` only: `@modelcontextprotocol/sdk` (MIT), `@logicflow/core` (Apache-2.0), `pdf-parse` (MIT), `@deepseek-ai/*` (MIT), etc.
-- Before publishing, ensure `package.json` `repository.url` points at your repo.
-- Dev rules: `systemPrompt.variable` names must match `/^[a-z][a-z0-9_]*$/`; `systemPrompt.section` allows colons — see [docs/ERROR-FIX-LOG.md](./docs/ERROR-FIX-LOG.md).
+## 🤝 Contributing
+
+Ideas, bug reports and PRs are welcome. Before publishing to npm, make sure `package.json` `repository.url` points at your repo. Dev constraints: `systemPrompt.variable` names must match `/^[a-z][a-z0-9_]*$/`; `systemPrompt.section` allows colons — see [docs/ERROR-FIX-LOG.md](./docs/ERROR-FIX-LOG.md) and [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+
+## 🧾 License
+
+Original implementation, **MIT**. No third-party code is pasted — references are credited in comments only. Runtime deps declared in `package.json`: `@modelcontextprotocol/sdk` (MIT), `@logicflow/core` (Apache-2.0), `pdf-parse` (MIT), `@deepseek-ai/*` (MIT).
