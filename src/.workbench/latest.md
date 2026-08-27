@@ -1,10 +1,10 @@
-# 📇 代码索引 · E:\dsh_work\dsh-workbench\src · 2026-08-27_184029
+# 📇 代码索引 · E:\dsh_work\dsh-workbench\src · 2026-08-27_195218
 
 > 由 dsh-workbench `workbench_code_index` 生成 · 每块记录「文件 + 起始行/结束行」· 检索直达请用 `workbench_code_locate` · 本目录最新索引始终在 `latest.md`
 
 ## 🔄 本次变更
-- 新增: 83 · 更新: 14 · 移除: 63 · 当前块总数: 194
-- 说明: V6: 新增 src/publish.ts 预设自动配置+挂载验证+GitHub 发布流水线; shared/types.ts 新增 PublishSettings 类型与 WorkbenchState.publish 字段; config.ts 新增 publish 设置段; index.ts apply() 接入 runPublishPipeline
+- 新增: 0 · 更新: 19 · 移除: 0 · 当前块总数: 194
+- 说明: 强化代码索引强制约定: workbench:code-index 系统提示改为「改码前必须 locate 定位 + 禁止整文件 read(仅 locate 无命中才降级) + workbench_code_find 兜底 + 改码后必须 index 更新」
 
 ## 📄 文件清单
 | 文件 | 块数 | 行数 |
@@ -378,9 +378,19 @@
 
 #### ⚙️ 方法 `execute` · L635-L673
 - 签名: `async execute(args): Promise<Record<string, JsonValue>> {`
+- 功能: workbench_code_index 工具执行体: scan 返回目录功能块结构(供模型注释), commit 合并功能注释写入 .workbench 索引
+- 入参: action(dir/max_blocks 或 annotations/note)
+- 返回: {action, root, files, blocks} 或 {action, ...commit 结果}
+- 副作用: commit 时写 .workbench 快照与 latest.md
+- 依赖: scanDirectory/commitIndex (codeindex.ts)
 
 #### ⚙️ 方法 `execute` · L700-L712
 - 签名: `async execute(args): Promise<Record<string, JsonValue>[]> {`
+- 功能: workbench_code_locate 工具执行体: 在 .workbench 索引中按语义定位功能块, 返回文件+起始/结束行, 供模型按行精确读取
+- 入参: query, dir, top_k
+- 返回: 按目录分组的命中[{file, name, startLine, endLine, summary}] 或未找到索引提示
+- 副作用: 无
+- 依赖: locateInIndexes (codeindex.ts)
 
 #### 🔧 函数 `listSkills` · L767-L775
 - 签名: `async function listSkills(agentScope: unknown, svc: SkillsServiceLike): Promise<SkillView[`
@@ -498,142 +508,57 @@
 ### `publish.ts`
 #### 🧬 类型 `AgentPresetsFace` · L34-L37
 - 签名: `export interface AgentPresetsFace {`
-- 功能: 流水线所需的 agentPresets 服务最小接口(仅 standingKeyFor 挂载验证)
-- 入参: 无
-- 返回: 接口类型
-- 副作用: 无
-- 依赖: DSH agentPresets 服务
 
 #### 🧬 类型 `PipelineContext` · L40-L48
 - 签名: `export interface PipelineContext {`
-- 功能: 流水线运行上下文: agentPresets 服务、dshHome、读取/记录 publish 设置
-- 入参: 由 src/index.ts apply() 提供
-- 返回: 接口类型
-- 副作用: 无
-- 依赖: PublishSettings
 
 #### 🔧 函数 `packageRoot` · L51-L53
 - 签名: `export function packageRoot(): string {`
-- 功能: 解析插件包根目录(lib/ 的上一级), 用于定位捆绑预设与 git 工作区
-- 入参: import.meta.url
-- 返回: 包根绝对路径
-- 副作用: 无
-- 依赖: 无
 
 #### 🔧 函数 `bundleDir` · L56-L58
 - 签名: `export function bundleDir(presetId: string): string {`
-- 功能: 返回包内捆绑预设目录 presets/<presetId> 的绝对路径
-- 入参: presetId
-- 返回: 绝对路径
-- 副作用: 无
-- 依赖: packageRoot
 
 #### 🔧 函数 `git` · L61-L75
 - 签名: `function git(args: string[], cwd: string): Promise<{ code: number; out: string; err: strin`
-- 功能: 在指定 cwd 执行一条 git 命令并捕获输出, 永不抛错
-- 入参: args 数组 + cwd
-- 返回: {code, out, err}
-- 副作用: 执行 git 命令
-- 依赖: child_process.spawn, 系统 git
 
 #### 🔧 函数 `exists` · L77-L81
 - 签名: `async function exists(p: string): Promise<boolean> {`
-- 功能: 判断路径是否存在
-- 入参: 路径
-- 返回: boolean
-- 副作用: 无
-- 依赖: node:fs stat
 
 #### 🔧 函数 `copyTree` · L84-L94
 - 签名: `export async function copyTree(from: string, to: string): Promise<void> {`
-- 功能: 递归复制目录树(保留相对结构, 不处理符号链接)
-- 入参: from/to 目录
-- 返回: void
-- 副作用: 创建/写入 to 目录
-- 依赖: node:fs
 
 #### 🔧 函数 `hashTree` · L97-L123
 - 签名: `export async function hashTree(dir: string): Promise<string> {`
-- 功能: 对目录下所有文件(按排序相对路径)计算确定性 sha256, 用于判断捆绑预设与已安装副本是否一致
-- 入参: 目录路径
-- 返回: sha256 十六进制串
-- 副作用: 无
-- 依赖: node:crypto
 
 #### 🔧 函数 `walk` · L99-L120
 - 签名: `async function walk(d: string): Promise<void> {`
 
 #### 🧬 类型 `InstallResult` · L125-L128
 - 签名: `export interface InstallResult {`
-- 功能: 预设安装结果: installed/refreshed/up-to-date + 目标目录
-- 入参: 无
-- 返回: 接口类型
-- 副作用: 无
-- 依赖: 无
 
 #### 🔧 函数 `ensurePresetInstalled` · L137-L153
 - 签名: `export async function ensurePresetInstalled(presetId: string, dshHome: string = homedir())`
-- 功能: 自动配置捆绑预设到 $DSH_HOME/.agent-presets: 缺失则安装, 内容变化则先备份(带时间戳)再刷新, 一致则跳过
-- 入参: presetId + dshHome
-- 返回: InstallResult
-- 副作用: 写入/重命名 .agent-presets 目录
-- 依赖: bundleDir, copyTree, hashTree
 
 #### 🧬 类型 `VerifyResult` · L155-L159
 - 签名: `export interface VerifyResult {`
-- 功能: 预设挂载验证结果: ok/presetId/message
-- 入参: 无
-- 返回: 接口类型
-- 副作用: 无
-- 依赖: 无
 
 #### 🔧 函数 `verifyPreset` · L162-L172
 - 签名: `export async function verifyPreset(agentPresets: AgentPresetsFace, presetId: string): Prom`
-- 功能: 通过 agentPresets.standingKeyFor 对预设做真实 roster 挂载验证
-- 入参: agentPresets 服务 + presetId
-- 返回: VerifyResult
-- 副作用: 触发预设组合挂载检查
-- 依赖: agentPresets.standingKeyFor
 
 #### 🧬 类型 `PublishResult` · L174-L178
 - 签名: `export interface PublishResult {`
-- 功能: GitHub 上传结果: pushed/reason/detail
-- 入参: 无
-- 返回: 接口类型
-- 副作用: 无
-- 依赖: 无
 
 #### 🔧 函数 `normalizeRemote` · L181-L189
 - 签名: `function normalizeRemote(url: string): string {`
-- 功能: 归一化 git 远程地址(git+/协议/.git/git@ 形态)以便比较
-- 入参: URL 字符串
-- 返回: 归一化字符串
-- 副作用: 无
-- 依赖: 无
 
 #### 🔧 函数 `isOwnerWorktree` · L197-L205
 - 签名: `export async function isOwnerWorktree(cwd: string, repo: string): Promise<boolean> {`
-- 功能: 判断当前是否运行在所有者 git 工作区(包目录的 origin 远程与配置仓库匹配); 下载者 node_modules 安装返回 false
-- 入参: cwd + repo
-- 返回: boolean
-- 副作用: 执行 git rev-parse / remote get-url
-- 依赖: git
 
 #### 🔧 函数 `publishToGitHub` · L211-L228
 - 签名: `export async function publishToGitHub(`
-- 功能: 验证通过后的 GitHub 上传: 非所有者环境或工作区干净则跳过, 否则 git add/commit/push 覆盖推送
-- 入参: cwd + {repo, branch, message}
-- 返回: PublishResult
-- 副作用: git add/commit/push 修改远端仓库
-- 依赖: isOwnerWorktree, git
 
 #### 🔧 函数 `runPublishPipeline` · L234-L289
 - 签名: `export async function runPublishPipeline(ctx: PipelineContext): Promise<string> {`
-- 功能: V6 主流水线: 1/3 配置预设 → 2/3 standingKeyFor 验证 → 3/3 验证通过后上传 GitHub; 全程不抛错, 结果写入 publish.lastStatus
-- 入参: PipelineContext
-- 返回: 状态字符串
-- 副作用: 写 .agent-presets、可能 git push、写 settings
-- 依赖: ensurePresetInstalled, verifyPreset, publishToGitHub
 
 ### `search.ts`
 #### 🧬 类型 `IndexedDoc` · L25-L31

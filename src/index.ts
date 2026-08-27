@@ -734,7 +734,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     ctx.systemPrompt.section({
       name: 'workbench:code-index',
       order: 130,
-      text: '代码索引约定(.workbench): 对 settings 中 indexWatchDirs 配置的目录, 宿主会自动维护其 .workbench 索引(行号始终与当前代码一致); 每次生成或修改代码后, 仍应调用 workbench_code_index 更新索引并补功能注释(action=scan 查看功能块结构与行范围 → action=commit 提交功能注释); 写代码前需定位已有函数/组件/类时, 先调用 workbench_code_locate 获取「文件+起始/结束行」再按行精确读取, 不要整文件重复扫描。',
+      text: '代码索引强制约定(.workbench): ① 修改 src 下任何代码前, 必须先调用 workbench_code_locate(dir=<代码目录>, query=<要修改的函数/组件/类名或功能点>) 定位涉及的功能块, 再按返回的「文件+起始/结束行」精确读取; 禁止直接 read 整个文件——仅当 locate 无命中或返回范围不足以覆盖修改点时, 才允许降级为 read 相关文件并按行读取。② workbench_code_find 作为补充: locate 未命中(目录尚无索引)或索引疑似过期时, 先用它按符号名实时扫描。③ 每次生成或修改代码后, 必须调用 workbench_code_index(action=scan 查看功能块结构与行范围 → action=commit 提交功能注释) 更新索引; settings 中 indexWatchDirs 配置的目录由宿主自动维护行号, 行号始终与当前代码一致。',
     }),
   )
   // V3 fix: the active prompt is injected as a DYNAMIC section — DSH only
