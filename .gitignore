@@ -20,3 +20,6 @@ Thumbs.db
 # Local settings
 .env
 .env.local
+
+# Generated code index (host/maintained per-directory snapshots)
+.workbench/

@@ -16,6 +16,18 @@ DeepSeek Harness 给了模型超能力——但配置它们通常意味着翻文
 
 界面**跟随 DSH 界面语言自动切换**(中文 / English),并完全基于 **DSH 设计令牌(token)** 构建——**跟随宿主的浅色 / 深色 / 跟随系统主题**,用 DSH 原生图标,视觉零漂移。
 
+<div align="center">
+
+**工作台页签** —— 六大智能体能力,一个地方:
+
+![工作台总览](docs/screenshots/workbench-overview.png)
+
+*模块面板 —— 每个能力都点得动:*
+
+![工作台面板](docs/screenshots/workbench-panel.png)
+
+</div>
+
 ---
 
 ## ✨ 为什么用它?

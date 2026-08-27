@@ -16,6 +16,18 @@ DeepSeek Harness gives your model superpowers — but configuring them usually m
 
 It speaks your language (**zh / EN, auto-synced with DSH**) and wears DSH's own design tokens, so it **follows the host light / dark / system theme** and looks native from day one.
 
+<div align="center">
+
+**The Workbench tab** — every agent capability, one place:
+
+![Workbench overview](docs/screenshots/workbench-overview.png)
+
+*Module panels — every capability is clickable:*
+
+![Workbench panel](docs/screenshots/workbench-panel.png)
+
+</div>
+
 ---
 
 ## ✨ Why dsh-workbench?
