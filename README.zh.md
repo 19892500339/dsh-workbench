@@ -1,6 +1,6 @@
 # 🛠️ dsh-workbench
 
-> **智能体的可视化控制台** —— 把 RAG / MCP / 工作流 / 技能 / 工具 / Prompt 六大能力收进一个对话页签,直接在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 里可视化管理。
+> **智能体的可视化控制台** —— 把 RAG / MCP / 工作流 / 技能 / 工具 / Prompt / 项目状态 七大能力收进一个对话页签,直接在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 里可视化管理。
 
 <div align="center">
 
@@ -12,7 +12,7 @@
 
 </div>
 
-DeepSeek Harness 给了模型超能力——但配置它们通常意味着翻文件、改 yaml、啃文档。**dsh-workbench** 把六大核心能力做成**可视化、点一下就能用的控制台**:对话标签栏新增「**工作台**」页签(Chat / Trajectory 之后),并在输入框内提供「**机制开关**」,随时用工作台配置**替换** DSH 的对应机制,一键还原。
+DeepSeek Harness 给了模型超能力——但配置它们通常意味着翻文件、改 yaml、啃文档。**dsh-workbench** 把六大核心能力**外加一个项目健康仪表盘**做成**可视化、点一下就能用的控制台**:对话标签栏新增「**工作台**」页签(Chat / Trajectory 之后),并在输入框内提供「**机制开关**」,随时用工作台配置**替换** DSH 的对应机制,一键还原。
 
 界面**跟随 DSH 界面语言自动切换**(中文 / English),并完全基于 **DSH 设计令牌(token)** 构建——**跟随宿主的浅色 / 深色 / 跟随系统主题**,用 DSH 原生图标,视觉零漂移。
 
@@ -55,6 +55,7 @@ DeepSeek Harness 给了模型超能力——但配置它们通常意味着翻文
 | 🛠️ **工具** | **DSH 全量工具**(含已隐藏)/ 传参测试调用 / 「对模型隐藏」运行时开关 | `ctx.tools` 注册表 + `ctx.tools.restrict({ deny })` 即时生效 |
 | 📝 **Prompt** | 内置 8 套领域模板 / CRUD / `{{var}}` 占位符预览 / 切换生效 / 📝 输入框弹层(最近 3 个 + 取消 + **注入预览**) | 宿主动态 section `workbench:active-prompt`,未激活时**零上下文成本** |
 | 📇 **代码索引** | 每个代码目录维护 `.workbench/` 索引(功能块 → 文件 + 起始/结束行 + 功能注释),时间戳快照 + 实时 `latest.md` | 模型驱动宿主工具:`workbench_code_index`(scan/commit)、`workbench_code_locate` —— **先定位再按行读,告别整文件扫描** |
+| 🩺 **项目状态** | **当前工作区**健康仪表盘:六维状态卡(RAG / MCP / 技能 / 工具 / 工作流 / 结构)· 总体健康分 · **依赖图 & 调用图**(可点击 SVG)· 带注释覆盖的框架树 · **点任意卡片/节点 → 面板内直接看对应源码行** | `workbench_project_status` 工具 + `src/projectstatus.ts` 静态分析(import → 依赖边、调用引用 → 调用边、TODO/FIXME 扫描、注释覆盖)——报告落盘 `.workbench/project-status.md` + `.json` |
 
 ### 🎛️ 机制开关(输入框内)
 
@@ -90,6 +91,24 @@ DeepSeek Harness 给了模型超能力——但配置它们通常意味着翻文
 随时复现:`node scripts/token-compare.mjs --dir <代码目录>`。
 
 **行号永远是最新的**——要么用插件内置 watch(settings 里配置 `workbench.indexWatchDirs`,宿主自动轮询维护),要么用独立脚本(`scripts/watch-workbench.mjs` 常驻守护 / `scripts/refresh-workbench.mjs` 一次性刷新,可挂 git hook、CI、npm scripts)。
+
+> **近期修复**(V7):`workbench_code_find` 现在能召回**嵌套**的函数/类/常量(声明正则不再只认顶层,嵌套声明也不再被跳过);`workbench_code_index commit` 会**先继承上一版注释再合并本次注解**,部分提交不再冲掉旧注释。
+
+---
+
+## 🩺 项目状态 —— 动手前先看清整个项目
+
+就像运维工程师改系统前先看调用图一样,**「项目状态」**页签给模型(和你)一份当前工作区的一眼健康报告——让每次改动都不再「盲改」:
+
+- **六维状态卡** —— RAG / MCP / 技能 / 工具 / 工作流 / 结构,每维带状态行、🟢🟡🔴 健康徽章与 0–100 分数条;
+- **总体健康分** —— 融合配置侧信号(MCP 是否连接?RAG 索引是否构建?技能/工具/工作流是否就绪?)与代码侧信号(注释覆盖率、TODO/FIXME 数、索引是否过期、超大文件);
+- **依赖图** —— 文件 → 文件的 import/require 依赖边,可点击 SVG;
+- **调用图** —— 函数 → 函数的调用边(可解析到项目内符号),同样可点击;
+- **框架树** —— 目录 → 文件 → 功能块,标注注释覆盖与 TODO/FIXME 数;
+- **点哪看哪** —— 点任意卡片/节点,面板内直接展示**带行号的对应源码**;改代码前也可让模型用 `workbench_project_status` 工具读同一份报告;
+- **字符化落盘** —— 每次扫描重写项目根下的 `.workbench/project-status.md`(人/模型可读)+ `.workbench/project-status.json`(机器可读)。
+
+默认分析目录是**当前会话的工作区**(`agent.session.header.cwd`),再回退到 `workbench.indexWatchDirs`——所以它分析的就是你正在干活的那个项目。
 
 ---
 
@@ -128,6 +147,9 @@ dsh plugin --profile web add link:<本仓库绝对路径>
 **⑤ 把某个工具藏起来**
 「工作台 → 工具」→ 对任意工具勾选「隐藏」(经 `ctx.tools.restrict` 即时生效),取消勾选恢复。
 
+**⑥ 改代码前,先看项目状态**
+「工作台 → 项目状态」→ 默认自动定位**当前会话工作区** → 看六维健康卡,再切到「依赖图 / 调用图」页签,点节点直达对应源码行。同一份报告模型也能通过 `workbench_project_status` 工具读取——改代码前先调用它。
+
 ---
 
 ## 🏗️ 开发构建
@@ -160,6 +182,7 @@ dsh-workbench/
 │   ├── config.ts           # settings 命名空间 schema(schemastery)
 │   ├── search.ts           # BM25 检索引擎(零依赖)
 │   ├── codeindex.ts        # .workbench 索引: scan → annotate → commit → locate
+│   ├── projectstatus.ts    # 项目健康分析: 依赖图/调用图、TODO 扫描、报告落盘 .workbench
 │   ├── embedding.ts        # 向量引擎(OpenAI 兼容端点 + RRF 融合)
 │   ├── mcp.ts              # MCP 连接/测试/自动注册工具
 │   ├── documents.ts        # 文档解析(pdf-parse / txt / md)

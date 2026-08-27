@@ -1,6 +1,6 @@
 # 🛠️ dsh-workbench
 
-> **A visual control room for your agent** — RAG · MCP · Workflows · Skills · Tools · Prompts, orchestrated in one tab, right inside [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
+> **A visual control room for your agent** — RAG · MCP · Workflows · Skills · Tools · Prompts · Project Status, orchestrated in one tab, right inside [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
 <div align="center">
 
@@ -12,7 +12,7 @@
 
 </div>
 
-DeepSeek Harness gives your model superpowers — but configuring them usually means digging through files, yaml and docs. **dsh-workbench** turns the six core agent capabilities into a **visual, clickable control room**: a dedicated **Workbench tab** next to Chat / Trajectory, plus **mechanism switches inside the composer** that swap DSH's own behavior for your workbench configuration — with one-click restore.
+DeepSeek Harness gives your model superpowers — but configuring them usually means digging through files, yaml and docs. **dsh-workbench** turns the six core agent capabilities **plus a project health dashboard** into a **visual, clickable control room**: a dedicated **Workbench tab** next to Chat / Trajectory, plus **mechanism switches inside the composer** that swap DSH's own behavior for your workbench configuration — with one-click restore.
 
 It speaks your language (**zh / EN, auto-synced with DSH**) and wears DSH's own design tokens, so it **follows the host light / dark / system theme** and looks native from day one.
 
@@ -55,6 +55,7 @@ All configuration persists through the host `settings` service (`~/.dsh/settings
 | 🛠️ **Tools** | **Every DSH tool** (including hidden ones) · test-call with JSON args · "hide from model" runtime toggle | `ctx.tools` registry + `ctx.tools.restrict({ deny })` — takes effect immediately |
 | 📝 **Prompt** | 8 built-in domain templates · CRUD · `{{var}}` placeholder preview · switch active · 📝 composer picker (recent 3 + cancel + **injection preview**) | Host dynamic section `workbench:active-prompt` — zero context cost when inactive |
 | 📇 **Code index** | Per-directory `.workbench/` index (function blocks → file + start/end lines + comments) · timestamped snapshots + live `latest.md` | Model-driven host tools: `workbench_code_index` (scan/commit), `workbench_code_locate` — locate before reading, **no more whole-file scans** |
+| 🩺 **Project status** | Health dashboard for the **current workspace**: six-dimension status cards (RAG / MCP / Skills / Tools / Workflows / Structure) · overall health score · **dependency graph & call graph** (clickable SVG) · framework tree with annotation coverage · **click any card/node → view the exact source lines** | `workbench_project_status` tool + `src/projectstatus.ts` static analysis (imports → dep edges, call refs → call edges, TODO/FIXME scan, annotation coverage) — report persisted to `.workbench/project-status.md` + `.json` |
 
 ### 🎛️ Mechanism switches (inside the composer)
 
@@ -90,6 +91,24 @@ Measured on this repo's real source (5 real coding tasks):
 Reproduce anytime: `node scripts/token-compare.mjs --dir <code-dir>`.
 
 Line numbers stay fresh automatically — either via the built-in watcher (`workbench.indexWatchDirs` in settings) or the standalone `scripts/watch-workbench.mjs` / `scripts/refresh-workbench.mjs` (git hooks, CI, npm scripts — your choice).
+
+> **Recent fixes** (V7): `workbench_code_find` now recalls **nested** functions/classes/consts (declaration regexes are no longer top-level-only, and nested declarations are no longer skipped); `workbench_code_index commit` now **inherits the previous annotations** before merging the new ones, so a partial commit never drops existing comments.
+
+---
+
+## 🩺 Project status — see the whole project before you touch it
+
+Like an ops engineer reading a call graph before changing a system, the **Project Status** tab gives the model (and you) a one-glance health report of the current workspace — so a change never lands blind:
+
+- **Six-dimension status cards** — RAG / MCP / Skills / Tools / Workflows / Structure, each with a status line, a 🟢🟡🔴 health badge and a 0–100 score bar;
+- **Overall health score** — fused from config-side signals (MCP connected? RAG index built? skills / tools / workflows present?) and code-side signals (annotation coverage, TODO/FIXME count, stale index, oversized files);
+- **Dependency graph** — file → file import/require edges, drawn as a clickable SVG;
+- **Call graph** — function → function call edges resolved to project symbols, clickable too;
+- **Framework tree** — directory → file → blocks, with annotation coverage and TODO/FIXME counts;
+- **Click anything → read the exact source lines** in the panel (line-numbered), or ask the model to open the same report via the `workbench_project_status` tool before editing code;
+- **Persisted as text** — every scan rewrites `.workbench/project-status.md` (human/model readable) + `.workbench/project-status.json` (machine readable) under the project root.
+
+The default target directory is the **current session's workspace** (`agent.session.header.cwd`), falling back to `workbench.indexWatchDirs` — so it analyses the project you are actually working in.
 
 ---
 
@@ -128,6 +147,9 @@ Hard-refresh the browser (`Ctrl/Cmd + Shift + R`) → the **Workbench** tab appe
 **⑤ Hide a tool from the model**
 `Workbench → Tools` → toggle "hide" on any tool (works immediately via `ctx.tools.restrict`), untoggle to restore.
 
+**⑥ See the whole project before editing**
+`Workbench → 项目状态 (Project Status)` → it auto-targets the **current session's workspace** → read the six-dimension health cards, then open the **dependency graph / call graph** tabs and click a node to jump to the exact source lines. The same report is available to the model through the `workbench_project_status` tool — call it before modifying code.
+
 ---
 
 ## 🏗️ Development
@@ -160,6 +182,7 @@ dsh-workbench/
 │   ├── config.ts           # settings namespace schema (schemastery)
 │   ├── search.ts           # BM25 retrieval engine (zero dependencies)
 │   ├── codeindex.ts        # .workbench index: scan → annotate → commit → locate
+│   ├── projectstatus.ts    # project health analysis: dep/call graphs, TODO scan, report → .workbench
 │   ├── embedding.ts        # vector engine (OpenAI-compatible endpoint + RRF fusion)
 │   ├── mcp.ts              # MCP connect / test / auto-register tools
 │   ├── documents.ts        # document parsing (pdf-parse / txt / md)
