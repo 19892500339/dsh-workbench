@@ -143,7 +143,7 @@ const MAX_BLOCKS_DEFAULT = 500
 
 // --- directory walking -------------------------------------------------------
 
-async function listCodeFiles(root: string): Promise<string[]> {
+export async function listCodeFiles(root: string): Promise<string[]> {
   const out: string[] = []
   async function walk(dir: string, depth: number): Promise<void> {
     if (depth > MAX_DEPTH || out.length >= MAX_FILES) return
@@ -593,7 +593,8 @@ function buildPreview(lines: string[], from: number, to: number): string {
   return parts.join(' ').slice(0, MAX_PREVIEW_CHARS)
 }
 
-interface ParsedBlock {
+/** A block parsed from a single file (before it is stamped with its path). */
+export interface ParsedBlock {
   name: string
   kind: BlockKind
   startLine: number
@@ -616,7 +617,7 @@ function extFamily(ext: string): string {
   return 'other'
 }
 
-function scanFileText(relPath: string, text: string): ParsedBlock[] {
+export function scanFileText(relPath: string, text: string): ParsedBlock[] {
   const ext = relPath.split('.').pop()?.toLowerCase() ?? ''
   const family = extFamily(ext)
   let lines = text.split(/\r?\n/)

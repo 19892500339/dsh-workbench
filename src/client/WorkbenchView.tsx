@@ -12,18 +12,20 @@ import { WorkflowPanel } from './modules/WorkflowPanel.js'
 import { SkillPanel } from './modules/SkillPanel.js'
 import { ToolPanel } from './modules/ToolPanel.js'
 import { PromptPanel } from './modules/PromptPanel.js'
+import { ProjectStatusPanel } from './modules/ProjectStatusPanel.js'
 import type { StateSnapshot } from '../shared/types.js'
 import { t, useLocale } from './i18n.js'
 import {
   IconApiOutline14,
   IconBranchOutline16,
+  IconCodeOutline16,
   IconCordisPluginOutline14,
   IconDataOutline16,
   IconListPenOutline16,
   IconSkillOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
-type ModuleId = 'rag' | 'mcp' | 'workflow' | 'skill' | 'tool' | 'prompt'
+type ModuleId = 'rag' | 'mcp' | 'workflow' | 'skill' | 'tool' | 'prompt' | 'project'
 
 const MODULES: Array<{ id: ModuleId; labelKey: string; icon: React.ReactNode; hintKey: string }> = [
   { id: 'rag', labelKey: 'navRag', icon: <IconDataOutline16 size={16} />, hintKey: 'navRagHint' },
@@ -32,6 +34,7 @@ const MODULES: Array<{ id: ModuleId; labelKey: string; icon: React.ReactNode; hi
   { id: 'skill', labelKey: 'navSkills', icon: <IconSkillOutline16 size={16} />, hintKey: 'navSkillsHint' },
   { id: 'tool', labelKey: 'navTools', icon: <IconCordisPluginOutline14 size={16} />, hintKey: 'navToolsHint' },
   { id: 'prompt', labelKey: 'navPrompt', icon: <IconListPenOutline16 size={16} />, hintKey: 'navPromptHint' },
+  { id: 'project', labelKey: 'navProject', icon: <IconCodeOutline16 size={16} />, hintKey: 'navProjectHint' },
 ]
 
 export function WorkbenchView(props: { sessionId?: string }) {
@@ -97,6 +100,7 @@ export function WorkbenchView(props: { sessionId?: string }) {
             {active === 'skill' && <SkillPanel snapshot={snapshot} refresh={refresh} />}
             {active === 'tool' && <ToolPanel snapshot={snapshot} refresh={refresh} />}
             {active === 'prompt' && <PromptPanel snapshot={snapshot} refresh={refresh} />}
+            {active === 'project' && <ProjectStatusPanel snapshot={snapshot} refresh={refresh} sessionId={props.sessionId} />}
           </ErrorBoundary>
         )}
       </div>

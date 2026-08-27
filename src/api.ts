@@ -17,6 +17,8 @@ import type {
   WorkflowProgress,
   WorkflowScriptResult,
   WorkflowStepLog,
+  ProjectStatusReport,
+  ReadFileResult,
 } from './shared/types.js'
 
 /** A settings view (resolved value + revision for guarded writes). */
@@ -73,6 +75,10 @@ export interface WorkbenchRuntime {
   deactivatePrompt(): Promise<SettingsView>
   /** V2.1: built-in domain prompt templates. */
   promptTemplates(): PromptTemplate[]
+  /** V7: project status / health report (cached; force rescans). */
+  projectStatus(dir: string, force: boolean, sessionId?: string): Promise<ProjectStatusReport>
+  /** V7: read a bounded source line range inside a project root. */
+  readProjectFile(dir: string, file: string, startLine: number, endLine: number): Promise<ReadFileResult>
 }
 
 /** Wire-level error with a stable code for the panel. */
@@ -209,6 +215,25 @@ export async function dispatch(runtime: WorkbenchRuntime, method: string, payloa
       return runtime.deactivatePrompt()
     case 'prompt.templates':
       return runtime.promptTemplates()
+    case 'projectstatus.get':
+      return runtime.projectStatus(
+        str(p['dir'], 'dir'),
+        false,
+        p['sessionId'] === undefined ? undefined : str(p['sessionId'], 'sessionId'),
+      )
+    case 'projectstatus.scan':
+      return runtime.projectStatus(
+        str(p['dir'], 'dir'),
+        true,
+        p['sessionId'] === undefined ? undefined : str(p['sessionId'], 'sessionId'),
+      )
+    case 'projectstatus.readFile':
+      return runtime.readProjectFile(
+        str(p['dir'], 'dir'),
+        str(p['file'], 'file'),
+        num(p['startLine'], 'startLine'),
+        num(p['endLine'], 'endLine'),
+      )
     default:
       throw new WorkbenchApiError('not-found', `未知方法 "${method}"`, 404)
   }

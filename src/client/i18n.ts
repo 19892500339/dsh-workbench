@@ -127,6 +127,15 @@ const zh: Dict = {
   ppPreviewVars: '预览变量', ppPreviewVarsPh: 'var=value, 逗号分隔', ppPreview: '渲染效果预览:', ppEmpty: '(空)',
   ppActive: '● 生效中', ppSwitch: '切换生效', ppActivated: '已切换生效提示词 (下一个模型步骤生效)', ppRestored: '已恢复内置领域模板 (软件工程/代码审查/翻译/数据分析等)',
   ppNeedName: '请填写名称', ppSaved: '模板已保存', ppNewName: '新模板', ppPlaceholderNote: '占位符将在预览与注入时替换。',
+
+  // project status panel
+  navProject: '项目状态', navProjectHint: '状态与健康',
+  psNoDir: '尚未配置 indexWatchDirs, 请先在设置中添加要分析的项目代码目录。',
+  psLoad: '读取', psRescan: '重新扫描', psOverview: '总览', psStructure: '框架', psDeps: '依赖图', psCalls: '调用图',
+  psFiles: '文件', psBlocks: '功能块', psCoverage: '注释覆盖', psDepEdges: '依赖边', psCallEdges: '调用边',
+  psDepNote: '节点=文件; 连线=import/require 依赖; 仅绘制项目内依赖, 外部包未绘制。',
+  psCallNote: '节点=函数/方法; 连线=调用关系; 仅绘制可解析到项目内符号的调用。',
+  psNoEdges: '暂无内部连线', psClose: '关闭', psOpenCode: '查看代码',
 }
 
 const en: Dict = {
@@ -236,6 +245,15 @@ const en: Dict = {
   ppPreviewVars: 'Preview vars', ppPreviewVarsPh: 'var=value, comma separated', ppPreview: 'Rendered preview:', ppEmpty: '(empty)',
   ppActive: '● active', ppSwitch: 'Activate', ppActivated: 'Active prompt switched (effective next model step)', ppRestored: 'Built-in domain templates restored (software eng / code review / translation / data analysis…)',
   ppNeedName: 'A name is required', ppSaved: 'Template saved', ppNewName: 'New template', ppPlaceholderNote: 'Placeholders are substituted in preview and on injection.',
+
+  // project status panel
+  navProject: 'Project Status', navProjectHint: 'Status & health',
+  psNoDir: 'No indexWatchDirs configured — add a project code directory in settings first.',
+  psLoad: 'Load', psRescan: 'Rescan', psOverview: 'Overview', psStructure: 'Structure', psDeps: 'Deps', psCalls: 'Calls',
+  psFiles: 'files', psBlocks: 'blocks', psCoverage: 'annotated', psDepEdges: 'dep edges', psCallEdges: 'call edges',
+  psDepNote: 'Nodes = files; edges = import/require dependencies; only internal deps are drawn.',
+  psCallNote: 'Nodes = functions/methods; edges = call relations resolvable to project symbols.',
+  psNoEdges: 'No internal edges', psClose: 'Close', psOpenCode: 'View code',
 }
 
 let lang: Lang = 'zh'

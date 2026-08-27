@@ -26,6 +26,8 @@ import { bm25Engine, corpusSignature, chunkText, buildCorpusIndex } from './sear
 import type { CorpusIndex } from './search.js'
 import { scanDirectory, commitIndex, locateInIndexes, refreshIndex, codeDirSignature } from './codeindex.js'
 import type { CodeBlock } from './codeindex.js'
+import { analyzeCode, buildReport, writeProjectStatus, readFileRange } from './projectstatus.js'
+import type { ConfigSignals, ProjectStatusReport, ReadFileResult } from './projectstatus.js'
 import { extractDocumentText } from './documents.js'
 import { testMcpServer, makeServerId, connectMcpServer } from './mcp.js'
 import { embedTexts, buildVectorIndex, searchVectors, fuseRrf, isEmbeddingConfigured } from './embedding.js'
@@ -717,6 +719,101 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     console.error('[dsh-workbench] workbench_code_locate 注册失败:', error)
   }
 
+  // --- V7: project status / health (项目状态) ---------------------------------
+  // 在代码索引之上叠加「项目体检」: 依赖图 / 调用图 / 注释覆盖 / TODO 标记,
+  // 结合工作台配置侧能力(RAG/MCP/技能/工具/工作流)的实时健康, 合成六维
+  // 状态报告并落盘 <root>/.workbench/project-status.{md,json}。面板与模型
+  // 工具 workbench_project_status 均读取同一份报告, 让模型改代码前先看概况。
+  const projectStatusCache = new Map<string, { sig: string; report: ProjectStatusReport }>()
+
+  function defaultProjectDir(state: WorkbenchState): string {
+    const dirs = state.indexWatchDirs.map((d) => d.trim()).filter((d) => d.length > 0)
+    return dirs[0] ?? ''
+  }
+
+  /** Collect the config-side health signals from the live workbench state. */
+  async function buildProjectSignals(agent: AgentLike | undefined): Promise<ConfigSignals> {
+    const state = viewOf().value
+    const ragInfo = ragCaches.get(defaultKbId)?.info
+    const ragConfigured = state.rag.knowledgeBases.length > 0 || (state.rag.corpusDir || config.corpusDir) !== ''
+    const servers = state.mcpServers
+    const connectedCount = servers.filter((s) => s.enabled && mcpConnections.get(s.id)?.connected).length
+    const mcpTools = servers.reduce((a, s) => a + (mcpConnections.get(s.id)?.tools.length ?? 0), 0)
+    const mcpErrors: string[] = []
+    for (const [, conn] of mcpConnections) if (conn.error) mcpErrors.push(conn.error)
+    const skillsSvc = serviceFromAgent(agent, 'skills', ctx.skills)
+    const skills = await listSkills(agent ?? undefined, skillsSvc)
+    const toolsSvc = serviceFromAgent(agent, 'tools', tools)
+    const toolList = listTools(agent ?? undefined, toolsSvc)
+    const workflows = state.workflows
+    const active = workflows.find((w) => w.id === state.activeWorkflowId) ?? workflows[0]
+    return {
+      rag: {
+        configured: ragConfigured,
+        built: ragInfo !== undefined && ragInfo.lastBuiltAt !== null,
+        docCount: ragInfo?.docCount ?? 0,
+        chunkCount: ragInfo?.chunkCount ?? 0,
+        engine: state.rag.engine,
+        error: ragInfo?.error,
+      },
+      mcp: { total: servers.length, connected: connectedCount, tools: mcpTools, errors: mcpErrors },
+      skills: { total: skills.length, names: skills.map((s) => s.name) },
+      tools: { total: toolList.length, hidden: toolList.filter((t) => t.hiddenFromModel).length },
+      workflows: { total: workflows.length, active: active?.id ?? '', activeName: active?.name ?? '' },
+    }
+  }
+
+  async function getProjectStatus(dir: string, force = false, sessionId?: string): Promise<ProjectStatusReport> {
+    const target = dir.trim() || defaultProjectDir(viewOf().value)
+    if (!target) throw new WorkbenchApiError('bad-request', '缺少项目目录且未配置 indexWatchDirs')
+    const root = resolve(target)
+    const cached = projectStatusCache.get(root)
+    if (!force && cached) {
+      const sig = await codeDirSignature(root).catch(() => '')
+      if (sig === cached.sig) return cached.report
+    }
+    const agent = sessionId === undefined ? undefined : ctx.agents.get(sessionId)
+    const code = await analyzeCode(root)
+    const signals = await buildProjectSignals(agent)
+    const report = buildReport(root, code, signals)
+    projectStatusCache.set(root, { sig: report.signature, report })
+    await writeProjectStatus(root, report).catch((e) => console.error('[dsh-workbench] 项目状态落盘失败:', e))
+    return report
+  }
+
+  async function readProjectFile(dir: string, file: string, startLine: number, endLine: number): Promise<ReadFileResult> {
+    return readFileRange(dir, file, startLine, endLine)
+  }
+
+  try {
+    ctx.effect(() =>
+      tools.register(
+        defineTool({
+          name: 'workbench_project_status',
+          description:
+            '读取工作区项目代码的整体状态与健康报告(依赖图/调用图/注释覆盖/TODO标记, 以及 RAG/MCP/技能/工具/工作流 六维健康度), 并返回可定位的代码文件+行号。改代码或加功能前先调用它"看一遍项目大概", 避免盲目改动引入兼容性问题。',
+          parameters: {
+            dir: { type: 'string', description: '项目代码目录(绝对路径); 省略时使用 settings 中 indexWatchDirs 的第一个目录' },
+            refresh: { type: 'boolean', description: '是否强制重新扫描(默认读取缓存, 代码变化会自动失效)' },
+          },
+          output: {
+            schema: { type: 'object', additionalProperties: true },
+            render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+          },
+          async execute(args): Promise<Record<string, JsonValue>> {
+            const state = viewOf().value
+            const dir = String(args.dir ?? '').trim() || defaultProjectDir(state)
+            if (!dir) throw new Error('缺少 dir 参数且未配置 indexWatchDirs')
+            const report = await getProjectStatus(dir, args.refresh === true)
+            return report as unknown as Record<string, JsonValue>
+          },
+        }),
+      ),
+    )
+  } catch (error) {
+    console.error('[dsh-workbench] workbench_project_status 注册失败:', error)
+  }
+
   // --- system prompt wiring -------------------------------------------------
   ctx.effect(() =>
     ctx.systemPrompt.section({
@@ -735,6 +832,14 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
       name: 'workbench:code-index',
       order: 130,
       text: '代码索引强制约定(.workbench): ① 修改 src 下任何代码前, 必须先调用 workbench_code_locate(dir=<代码目录>, query=<要修改的函数/组件/类名或功能点>) 定位涉及的功能块, 再按返回的「文件+起始/结束行」精确读取; 禁止直接 read 整个文件——仅当 locate 无命中或返回范围不足以覆盖修改点时, 才允许降级为 read 相关文件并按行读取。② workbench_code_find 作为补充: locate 未命中(目录尚无索引)或索引疑似过期时, 先用它按符号名实时扫描。③ 每次生成或修改代码后, 必须调用 workbench_code_index(action=scan 查看功能块结构与行范围 → action=commit 提交功能注释) 更新索引; settings 中 indexWatchDirs 配置的目录由宿主自动维护行号, 行号始终与当前代码一致。',
+    }),
+  )
+  // V7: project status convention — read the health report before touching code.
+  ctx.effect(() =>
+    ctx.systemPrompt.section({
+      name: 'workbench:project-status',
+      order: 140,
+      text: '项目状态约定: 在修改工作区代码或新增功能前, 先调用 workbench_project_status(dir=<项目代码目录>) 读取项目的依赖图/调用图/注释覆盖与六维健康度, 像人一样先看清项目全貌, 再决定改动点, 避免盲目修改引发兼容性或其它意外问题。',
     }),
   )
   // V3 fix: the active prompt is injected as a DYNAMIC section — DSH only
@@ -1181,6 +1286,9 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
     activatePrompt,
     deactivatePrompt,
     promptTemplates: () => builtinPromptTemplates(),
+    // V7: project status / health.
+    projectStatus: (dir: string, force: boolean, sessionId?: string) => getProjectStatus(dir, force, sessionId),
+    readProjectFile: (dir: string, file: string, startLine: number, endLine: number) => readProjectFile(dir, file, startLine, endLine),
   }
 
   // --- RPC route ------------------------------------------------------------

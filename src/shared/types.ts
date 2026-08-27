@@ -266,3 +266,102 @@ export interface StateSnapshot {
   /** V2: live MCP connection status per server id. */
   mcpStatus: Record<string, McpConnectionStatus>
 }
+
+// --- 项目状态 (project status / health report) -------------------------------
+
+export type HealthLevel = 'good' | 'warn' | 'error'
+
+export type DimensionId = 'rag' | 'mcp' | 'skill' | 'tool' | 'workflow' | 'structure'
+
+/** One clickable code reference (file + line range + annotation). */
+export interface CodeRef {
+  file: string
+  name: string
+  kind: string
+  startLine: number
+  endLine: number
+  summary?: string
+}
+
+/** A file-level dependency edge. */
+export interface DepEdge {
+  from: string
+  to: string
+  /** true when `to` is an external package specifier, not a project file. */
+  external: boolean
+}
+
+/** A function-level call edge. */
+export interface CallEdge {
+  from: string
+  fromBlock: string
+  fromLine: number
+  to: string
+  /** file where `to` is defined ('' when unresolved/external). */
+  toFile: string
+  external: boolean
+}
+
+export interface FileStat {
+  file: string
+  lines: number
+  blocks: number
+  annotated: number
+  todos: number
+  fixmes: number
+}
+
+export interface TodoLocation {
+  file: string
+  line: number
+  tag: string
+  text: string
+}
+
+/** One capability dimension's status + health. */
+export interface DimensionStatus {
+  id: DimensionId
+  status: string
+  health: HealthLevel
+  /** 0-100 health score. */
+  score: number
+  detail: string
+  refs: CodeRef[]
+}
+
+export interface ProjectStatusSummary {
+  files: number
+  blocks: number
+  annotatedBlocks: number
+  annotationCoverage: number
+  todoCount: number
+  fixmeCount: number
+  bigFiles: string[]
+  indexMissing: boolean
+  staleIndex: boolean
+  healthScore: number
+  health: HealthLevel
+  dependencyCount: number
+  callCount: number
+}
+
+export interface ProjectStatusReport {
+  root: string
+  generatedAt: number
+  signature: string
+  summary: ProjectStatusSummary
+  dimensions: DimensionStatus[]
+  files: FileStat[]
+  dependencies: DepEdge[]
+  calls: CallEdge[]
+  todos: TodoLocation[]
+}
+
+/** A bounded source line range returned by projectstatus.readFile. */
+export interface ReadFileResult {
+  path: string
+  startLine: number
+  endLine: number
+  totalLines: number
+  lines: Array<{ n: number; text: string }>
+}
