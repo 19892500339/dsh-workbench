@@ -102,30 +102,30 @@ export default {
       if (ext === '.py') {
         let m = line.match(/^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)/);
         if (m) return { kind: 'method', name: m[1], hasBrace: false };
-        m = line.match(/^class\s+([A-Za-z_]\w*)/);
+        m = line.match(/^\s*class\s+([A-Za-z_]\w*)/);
         if (m) return { kind: 'class', name: m[1], hasBrace: false };
         return null;
       }
       if (ext === '.go') {
-        let m = line.match(/^func\s+(?:\([^)]*\)\s+)?([A-Za-z_]\w*)/);
+        let m = line.match(/^\s*func\s+(?:\([^)]*\)\s+)?([A-Za-z_]\w*)/);
         if (m) return { kind: 'function', name: m[1], hasBrace: true };
-        m = line.match(/^type\s+([A-Za-z_]\w*)\s+(struct|interface)\b/);
+        m = line.match(/^\s*type\s+([A-Za-z_]\w*)\s+(struct|interface)\b/);
         if (m) return { kind: m[2] === 'interface' ? 'type' : 'class', name: m[1], hasBrace: true };
-        m = line.match(/^type\s+([A-Za-z_]\w*)\s*=/);
+        m = line.match(/^\s*type\s+([A-Za-z_]\w*)\s*=/);
         if (m) return { kind: 'type', name: m[1], hasBrace: false };
         return null;
       }
-      let m = line.match(/^(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/);
+      let m = line.match(/^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/);
       if (m) return { kind: 'class', name: m[1], hasBrace: true };
-      m = line.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/);
+      m = line.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/);
       if (m) return { kind: 'function', name: m[1], hasBrace: true };
-      m = line.match(/^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/);
+      m = line.match(/^\s*(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/);
       if (m) return { kind: 'type', name: m[1], hasBrace: true };
-      m = line.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=/);
+      m = line.match(/^\s*(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=/);
       if (m) return { kind: 'type', name: m[1], hasBrace: false };
-      m = line.match(/^(?:export\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)/);
+      m = line.match(/^\s*(?:export\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)/);
       if (m) return { kind: 'type', name: m[1], hasBrace: true };
-      m = line.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)/);
+      m = line.match(/^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)/);
       if (m) {
         const name = m[1];
         if (/=>\s*\{/.test(line)) return { kind: 'function', name: name, hasBrace: true };
@@ -166,7 +166,8 @@ export default {
         const def = matchDeclaration(lines[i], ext);
         if (!def) continue;
         const inner = stack[stack.length - 1];
-        if (inner) { if (!(inner.kind === 'class' && def.kind === 'method')) continue; }
+        // 允许嵌套声明(函数/类/常量等); 仅在非 class 块内跳过 method 型, 避免把 `foo()` 调用误判为方法。
+        if (inner && inner.kind !== 'class' && def.kind === 'method') continue;
         const endLine = def.hasBrace ? findBlockEnd(lines, i) : i;
         const block = lines.slice(i, Math.min(i + previewN, endLine + 1));
         symbols.push({

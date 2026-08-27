@@ -862,25 +862,12 @@ export async function commitIndex(
   if (scan.blocks.length === 0 && scan.files.length === 0) {
     return { root: absRoot, written: [], dirs: [], annotated: 0, warnings: ['目录下未发现可索引的代码文件'], total_blocks: 0 }
   }
-  const byKey = new Map<string, CodeBlock>()
-  for (const b of scan.blocks) byKey.set(blockKey(b), b)
+  // 先按块键建立本次注解索引(不立即应用), 使「继承已有注释 → 覆盖本次注解」的顺序可控。
+  const annotationByKey = new Map<string, Pick<CodeBlock, 'path' | 'name' | 'startLine'> & Partial<CodeBlock>>()
+  for (const a of annotations) annotationByKey.set(blockKey(a), a)
   const warnings: string[] = []
   let annotated = 0
-  for (const a of annotations) {
-    const target = byKey.get(blockKey(a))
-    if (!target) {
-      warnings.push(`未匹配: ${a.path}#${a.name}@L${a.startLine}(代码可能已被修改, 请重新 scan)`)
-      continue
-    }
-    if (a.summary !== undefined) {
-      target.summary = a.summary
-      annotated += 1
-    }
-    if (a.inputs !== undefined) target.inputs = a.inputs
-    if (a.outputs !== undefined) target.outputs = a.outputs
-    if (a.sideEffects !== undefined) target.sideEffects = a.sideEffects
-    if (a.dependsOn !== undefined) target.dependsOn = a.dependsOn
-  }
+  const matchedKeys = new Set<string>()
   const groups = new Map<string, CodeBlock[]>()
   for (const b of scan.blocks) {
     const dir = dirname(b.path)
@@ -895,6 +882,22 @@ export async function commitIndex(
     const wbDir = join(absRoot, dir, '.workbench')
     await mkdir(wbDir, { recursive: true })
     const prev = await readIndexFile(join(wbDir, 'latest.md')).catch(() => [])
+    // 先继承上一版 latest.md 里已有的功能注释, 再叠加本次提交的注解:
+    // 避免「只提交新增块的注释却冲掉旧注释」的覆盖式丢失(与 refreshIndex 一致)。
+    inheritAnnotations(prev, dirBlocks)
+    for (const b of dirBlocks) {
+      const a = annotationByKey.get(blockKey(b))
+      if (!a) continue
+      matchedKeys.add(blockKey(b))
+      if (a.summary !== undefined) {
+        b.summary = a.summary
+        annotated += 1
+      }
+      if (a.inputs !== undefined) b.inputs = a.inputs
+      if (a.outputs !== undefined) b.outputs = a.outputs
+      if (a.sideEffects !== undefined) b.sideEffects = a.sideEffects
+      if (a.dependsOn !== undefined) b.dependsOn = a.dependsOn
+    }
     const changed = diffBlocks(prev, dirBlocks)
     const snapshotName = await uniqueSnapshotName(wbDir, timestamp)
     const displayRoot = dir === '.' ? absRoot : join(absRoot, dir)
@@ -910,6 +913,12 @@ export async function commitIndex(
     await writeFile(join(wbDir, 'latest.md'), md, 'utf8')
     written.push(join(wbDir, snapshotName))
     dirs.push({ dir: dir === '.' ? '.' : dir, ...changed })
+  }
+  // 未匹配到任何功能块的注解 → 提示(代码可能已改动, 需重新 scan)。
+  for (const a of annotations) {
+    if (!matchedKeys.has(blockKey(a))) {
+      warnings.push(`未匹配: ${a.path}#${a.name}@L${a.startLine}(代码可能已被修改, 请重新 scan)`)
+    }
   }
   return { root: absRoot, written, dirs, annotated, warnings, total_blocks: scan.blocks.length }
 }

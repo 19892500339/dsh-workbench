@@ -119,9 +119,13 @@ interface SystemPromptLike {
 interface AgentLike {
   id: string
   ctx: { get(name: string): unknown }
+  /** V7: the live session this agent drives; its header carries the canonical workspace cwd. */
+  session?: { header?: { cwd?: string } }
 }
 interface AgentsServiceLike {
   get(id: string): AgentLike | undefined
+  /** V7: the agent that initiated the current tool execution (used to default the project dir). */
+  currentInitiator?(): AgentLike | undefined
 }
 interface AgentPresetsServiceLike {
   /** Read one agent's realm-provided service (e.g. workflowEngine lives behind an isolate realm). */
@@ -160,6 +164,12 @@ function serviceFromAgent<T>(agent: AgentLike | undefined, name: string, fallbac
   if (agent === undefined) return fallback
   const resolved = agent.ctx.get(name)
   return (resolved as T | undefined) ?? fallback
+}
+
+/** V7: the canonical workspace directory (cwd) of an agent's session, or ''. */
+function workspaceOf(agent: AgentLike | undefined): string {
+  const cwd = agent?.session?.header?.cwd
+  return typeof cwd === 'string' && cwd.length > 0 ? cwd : ''
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -764,7 +774,10 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
   }
 
   async function getProjectStatus(dir: string, force = false, sessionId?: string): Promise<ProjectStatusReport> {
-    const target = dir.trim() || defaultProjectDir(viewOf().value)
+    const agent = sessionId === undefined ? undefined : ctx.agents.get(sessionId)
+    // Default target: the current session's workspace (canonical cwd) first,
+    // then the initiator agent's workspace, then indexWatchDirs[0].
+    const target = dir.trim() || workspaceOf(agent) || workspaceOf(ctx.agents.currentInitiator?.()) || defaultProjectDir(viewOf().value)
     if (!target) throw new WorkbenchApiError('bad-request', '缺少项目目录且未配置 indexWatchDirs')
     const root = resolve(target)
     const cached = projectStatusCache.get(root)
@@ -772,7 +785,6 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
       const sig = await codeDirSignature(root).catch(() => '')
       if (sig === cached.sig) return cached.report
     }
-    const agent = sessionId === undefined ? undefined : ctx.agents.get(sessionId)
     const code = await analyzeCode(root)
     const signals = await buildProjectSignals(agent)
     const report = buildReport(root, code, signals)
@@ -793,7 +805,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
           description:
             '读取工作区项目代码的整体状态与健康报告(依赖图/调用图/注释覆盖/TODO标记, 以及 RAG/MCP/技能/工具/工作流 六维健康度), 并返回可定位的代码文件+行号。改代码或加功能前先调用它"看一遍项目大概", 避免盲目改动引入兼容性问题。',
           parameters: {
-            dir: { type: 'string', description: '项目代码目录(绝对路径); 省略时使用 settings 中 indexWatchDirs 的第一个目录' },
+            dir: { type: 'string', description: '项目代码目录(绝对路径); 省略时默认使用当前会话工作区, 再回退到 settings 中 indexWatchDirs 的第一个目录' },
             refresh: { type: 'boolean', description: '是否强制重新扫描(默认读取缓存, 代码变化会自动失效)' },
           },
           output: {
@@ -802,7 +814,8 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
           },
           async execute(args): Promise<Record<string, JsonValue>> {
             const state = viewOf().value
-            const dir = String(args.dir ?? '').trim() || defaultProjectDir(state)
+            const initiator = ctx.agents.currentInitiator?.()
+            const dir = String(args.dir ?? '').trim() || workspaceOf(initiator) || defaultProjectDir(state)
             if (!dir) throw new Error('缺少 dir 参数且未配置 indexWatchDirs')
             const report = await getProjectStatus(dir, args.refresh === true)
             return report as unknown as Record<string, JsonValue>
@@ -1257,6 +1270,7 @@ export function apply(ctx: CtxLike, config: { corpusDir: string; skillsDir: stri
         tools: listTools(agent ?? undefined, toolsSvc),
         rag: ragCaches.get(defaultKbId) ? { ...ragCaches.get(defaultKbId)!.info } : null,
         mcpStatus,
+        workspace: workspaceOf(agent),
       }
     },
     updateState,

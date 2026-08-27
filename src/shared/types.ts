@@ -265,6 +265,8 @@ export interface StateSnapshot {
   rag: RagIndexInfo | null
   /** V2: live MCP connection status per server id. */
   mcpStatus: Record<string, McpConnectionStatus>
+  /** V7: the current session's workspace directory (canonical cwd), or '' when unknown. */
+  workspace: string
 }
 
 // --- 项目状态 (project status / health report) -------------------------------

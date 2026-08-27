@@ -246,7 +246,12 @@ function CodeViewer(props: { dir: string; ref: CodeRef | null; onClose: () => vo
 export function ProjectStatusPanel(props: PanelProps) {
   useLocale()
   const { snapshot, refresh, sessionId } = props
-  const dirs = snapshot.value.indexWatchDirs.map((d) => d.trim()).filter((d) => d.length > 0)
+  const workspace = (snapshot.workspace ?? '').trim()
+  // 候选目录: 当前会话工作区优先, 再并入 indexWatchDirs(去重)。
+  const dirs = React.useMemo(
+    () => Array.from(new Set([workspace, ...snapshot.value.indexWatchDirs.map((d) => d.trim())].filter((d) => d.length > 0))),
+    [workspace, snapshot.value.indexWatchDirs],
+  )
   const [dir, setDir] = React.useState<string>(dirs[0] ?? '')
   const [report, setReport] = React.useState<ProjectStatusReport | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -277,6 +282,11 @@ export function ProjectStatusPanel(props: PanelProps) {
     if (dir) void load(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dir])
+
+  // 当候选目录变化(如首次拿到 workspace)而当前 dir 不在其中时, 回落到第一个。
+  React.useEffect(() => {
+    if (dirs.length > 0 && !dirs.includes(dir)) setDir(dirs[0]!)
+  }, [dirs, dir])
 
   React.useEffect(() => {
     setOpenRef(null)
